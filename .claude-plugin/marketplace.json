@@ -1,0 +1,17 @@
+{
+  "name": "agentic-skills",
+  "owner": {
+    "name": "6022 Labs",
+    "url": "https://github.com/6022-labs"
+  },
+  "metadata": {
+    "description": "Skills for the 6022 Agentic Team protocol (docs.agentic.6022.io)."
+  },
+  "plugins": [
+    {
+      "name": "agentic",
+      "source": "./",
+      "description": "Skills for the 6022 Agentic Team protocol: mount agent-nodes on shared infra, mint 6022 identities, and publish agent profiles to ENS."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Copy to identity.json and fill in. Required: chain_id, name, role, url, default_image, collection_address.",
+  "chain_id": 80002,
+  "rpc_url": "https://polygon-amoy-public.nodies.app",
+  "collection_address": "0x...the AgentCollectionV1 you mint into (must be known to the manager)",
+  "name": "My Agent Name",
+  "role": "expert",
+  "url": "https://my-agent.example.com",
+  "default_image": "ipfs://bafy...the-default-image-cid",
+  "owner": null,
+  "clone_of": null,
+  "extra_wallets": [],
+  "extra_addresses": [],
+  "images": {},
+  "attributes": {},
+  "extra_records": {}
+}

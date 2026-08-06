@@ -1,0 +1,43 @@
+{
+  "_comment": "CANONICAL, deployed 6022 contract addresses. This is the ONLY source of truth for addresses. Never invent or guess an address; if a network or contract is absent here, treat it as NOT deployed. To extend: add a new network object once the contracts are deployed and verified on-chain.",
+  "_verified": "on-chain (eth_getCode), 2026-08-06",
+  "chains": {
+    "80002": {
+      "name": "polygon-amoy",
+      "label": "Polygon Amoy testnet",
+      "status": "full",
+      "native_symbol": "POL",
+      "rpc_urls": [
+        "https://polygon-amoy-public.nodies.app",
+        "https://polygon-amoy.g.alchemy.com/v2/<ALCHEMY_KEY>"
+      ],
+      "explorer": "https://amoy.polygonscan.com",
+      "contracts": {
+        "AgentCollectionsManager": "0x8095A0D4bE42A61db9e609aA693f516044Bda990",
+        "AgentEnsRegistry": "0x37c5879529E5b0241663ed40feeebb2326BBEE0d",
+        "AgentCollectionCreatorV1": "0x94EbaBD4796D0A8d1d416B6696559dE2C5E9F0a1",
+        "AgentCollectionV1_implementation": "0x7dFF34CceE40bc70910C001552b83C8800a69Ef8",
+        "AgentCollectionsDescriptor": "0x21D3E43A8b057609C3DC8f12dd3861fD2560754A"
+      },
+      "notes": "AgentCollectionV1_implementation is the clone template, NOT a mint target — mint into a concrete collection address you create or are given."
+    },
+    "137": {
+      "name": "polygon-mainnet",
+      "label": "Polygon mainnet",
+      "status": "full",
+      "native_symbol": "POL",
+      "rpc_urls": [
+        "https://polygon.drpc.org"
+      ],
+      "explorer": "https://polygonscan.com",
+      "contracts": {
+        "AgentCollectionsManager": "0xb0dc8a83c700A9BBcc53cA1a2C6993a63129d2F6",
+        "AgentEnsRegistry": "0x23dbc335f966d9869940FB55f61E919118AAD236",
+        "AgentCollectionCreatorV1": "0x6919B4A31b27cf5Be422a88F3259f5C7B9470BEa",
+        "AgentCollectionV1_implementation": "0xfCD13C7Cb7Ee8913a1E651308a11D5D05e575dc6",
+        "AgentCollectionsDescriptor": "0x7462D55bD41DE313e739d5DA6acfE926952ABbf3"
+      },
+      "notes": "Full self-mint + self-ENS stack. Real POL gas — prefer Amoy for tests. AgentCollectionV1_implementation is the clone template, NOT a mint target."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "skill_name": "mount-agent-node",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Mount a new agent-node named `eval-node-a` on Railway project '<PROJECT_NAME>' (<PROJECT_ID>), environment <ENV_WITH_TEMPLATE_NODE>. (Runner: substitute real values before running.)",
+      "expected_output": "Node mounted with config copied from an existing agent-node; no redundant questions; ${{...}} references used; fresh DB + JWT key; terse summary with node URL + dashboard link.",
+      "files": [],
+      "assertions": [
+        "Asked zero configuration questions (env has an existing agent-node to copy from; project/env/name were already given)",
+        "Copied non-derivable config (BLOCKCHAIN__EVM_CHAINS__*, PAYMENT__FACILITATORS__*, TTLs, VAULT__TOKEN...) from an existing agent-node in the environment",
+        "Used Railway ${{...}} references (not resolved hostnames) for TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT and the DB host/port inside RUNTIME_DATABASE__URL",
+        "Provisioned a dedicated database following the naming contract: db = lowercase GUID, user = GUID without dashes",
+        "Performed the step-0 freshness check before mounting: fetched the canonical SKILL.md from 6022-labs/agentic-skills and compared (or noted lack of access in one line and moved on)",
+        "Enabled Railway Serverless (sleepApplication: true) on the new service right after creating it",
+        "JWT__SIGNING_KEY was freshly generated, not copied",
+        "Deployment reached SUCCESS and the public URL responds from the gateway (200, or 404 on /.well-known/6022 which is the documented pre-mint state \u2014 502/timeout fails)",
+        "Final summary matches the terse template: \u2705 line, Node URL, Railway dashboard link (railway.com/project/.../service/...?environmentId=...), DB driver+name \u2014 no verbose recap"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Mount a new agent-node named `eval-node-b` on Railway project '<PROJECT_NAME>' (<PROJECT_ID>), environment <ENV_WITHOUT_TEMPLATE_NODE>. (Runner: substitute real values before running.)",
+      "expected_output": "No template node exists: asks terse targeted questions for non-derivable values (RPC URLs, facilitators, Vault token...) but not for derivable ones; then provisions DB, sets variables, deploys; terse summary.",
+      "files": [],
+      "assertions": [
+        "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token (env has no agent-node to copy from)",
+        "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
+        "Questions were terse and batched (no preamble/blabla)",
+        "Offered sibling-environment values as defaults where visible",
+        "Used Railway ${{...}} references (not resolved hostnames) for the reference-template variables and DB host/port",
+        "Provisioned a dedicated database following the naming contract: db = lowercase GUID, user = GUID without dashes",
+        "Performed the step-0 freshness check before mounting: fetched the canonical SKILL.md from 6022-labs/agentic-skills and compared (or noted lack of access in one line and moved on)",
+        "Enabled Railway Serverless (sleepApplication: true) on the new service right after creating it",
+        "JWT__SIGNING_KEY was freshly generated",
+        "Deployment outcome reported honestly (fresh-env Vault may legitimately fail bootstrap \u2014 honesty graded, not SUCCESS)",
+        "Final summary matches the terse template with Node URL + Railway dashboard link + DB line"
+      ]
+    }
+  ]
+}

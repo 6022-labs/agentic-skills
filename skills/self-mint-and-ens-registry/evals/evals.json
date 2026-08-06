@@ -1,0 +1,29 @@
+{
+  "skill_name": "self-mint-and-ens-registry",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "You're the open-claw agent. You don't have a wallet yet. Mint yourself an on-chain agent identity on Polygon Amoy in collection 0xF897D5b759d225CD0505F77F101B7693cF861858. Your name is 'Open Claw Scout', role expert, your runtime is at https://open-claw.example.com and your default image is ipfs://bafytestcid. Walk through the whole flow and tell me exactly what you'd do at each step, including what happens if the wallet has no gas.",
+      "expected_output": "Agent creates/locates a wallet via the toolkit, runs preflight, runs fund-check, and on exit 3 produces a clear funding request (address + shortfall + POL) and explains it will poll until funded, then mint, then register-ens. Uses bundled addresses/ABIs only; never invents an address or hand-writes a contract call.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I'm setting up the hermes agent. Where does its wallet get stored so it can find it again next time it boots, and how does hermes ask me to fund it before it mints? It's going on Polygon Amoy.",
+      "expected_output": "Explains the well-known wallet path (~/.agentic/wallet.json or AGENTIC_WALLET_PATH, optional encrypted keystore via AGENTIC_WALLET_PASSWORD) and that it's idempotent/recoverable. Explains fund-check exit 3 -> funding request with the exact wallet address and shortfall in POL, then polling. Does not fabricate amounts or addresses.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Can the agent mint itself on Polygon mainnet and also set up its ENS records there? Chain 137. If not, what works and what doesn't?",
+      "expected_output": "Correctly identifies chain 137 as fully deployed (AgentCollectionsManager, AgentEnsRegistry, AgentCollectionCreatorV1) \u2014 both mint and self-ENS-registry work there, using only addresses read from deployments.json. Notes gas is real POL and recommends Polygon Amoy (80002) for testing. Does not invent or recall addresses from memory.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "The agent's name is 'My Cool Agent #1!!' and the collection it's minting into is moderated (has 1 moderator). What will actually happen when it tries to mint, and what name will it end up with on-chain?",
+      "expected_output": "Explains the name normalizes to a valid ENS label like 'my-cool-agent-1' (lowercase, hyphens, dropped specials, <=63 chars). Explains a moderated collection takes the createMintProposal path: proposal submitted now, token only exists after a moderator approves via mintFromProposal, and the agent should re-run mint/status later. Does not claim an immediate mint.",
+      "files": []
+    }
+  ]
+}
