@@ -121,12 +121,15 @@ Seal it: service → Variables → ⋯ → Seal (dashboard-only, permanent). Bet
 ```bash
 railway add --service "<SERVICE_NAME>" --repo 6022-labs/agentic-agent-node \
   --variables "KEY1=value1" --variables "KEY2=value2" ...
+railway service source connect --repo 6022-labs/agentic-agent-node --branch main --service "<SERVICE_NAME>"
 railway domain --service "<SERVICE_NAME>" --port 5000
 ```
 
-Repeat `--variables` per entry; single-quote values containing `${{...}}`. Repo builds from root Dockerfile, branch `main` — no build config. First build starts immediately ⇒ all variables at creation. Domain targets **port 5000** (the node's nginx listener).
+Repeat `--variables` per entry; single-quote values containing `${{...}}`. Repo builds from root Dockerfile — no build config. First build starts immediately ⇒ all variables at creation. Domain targets **port 5000** (the node's nginx listener).
 
-**Known CLI issue:** `railway add` can return "Unauthorized" despite a valid session (reads still work); re-login doesn't fix. Fallback: `railway api` `serviceCreate` mutation (variables in the input ⇒ first build fully configured), then `railway domain`. Connecting the repo separately: `serviceConnect` fails "ServiceInstance not found" — use `serviceInstanceUpdate(serviceId, environmentId, input: { source: { repo } })`; build auto-starts.
+**Branch pin — always `main`.** The connected branch is the autodeploy trigger: Railway auto-deploys every push to it by default. Pin it explicitly with the `source connect --branch main` line above (don't rely on the default-branch fallback). Autodeploy needs ≥1 project member's GitHub account with contributor access to the repo; if it ends up disabled, append one line to the summary: `⚠️ Autodeploy disabled — enable: service → Settings → GitHub trigger (check Railway GitHub App access).`
+
+**Known CLI issue:** `railway add` can return "Unauthorized" despite a valid session (reads still work); re-login doesn't fix. Fallback: `railway api` `serviceCreate` mutation (variables in the input ⇒ first build fully configured), then the `source connect --branch main` command above (the `serviceConnect` mutation fails "ServiceInstance not found"; if `source connect` also fails, `serviceInstanceUpdate(serviceId, environmentId, input: { source: { repo } })` connects repo + default branch), then `railway domain`. Build auto-starts once the source lands.
 
 ## Serverless (app sleeping)
 
