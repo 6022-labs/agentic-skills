@@ -29,6 +29,8 @@ Railway is the only implementation today — use it without asking. When AWS/GCP
 
 **Per-node secrets.** `JWT__SIGNING_KEY` is generated fresh per node (`openssl rand -hex 32`), never copied — a shared key would let one node forge another's sessions.
 
+**Vault token — never propagate a readable copy.** `VAULT__TOKEN` unlocks every agent's secrets in the shared Vault, so it is exempt from config copying. A new node may receive it in exactly two ways: through a host mechanism that is unreadable by design (e.g. Railway's sealed shared variable, wired by reference — see the host file), or as a value the user passes explicitly in the conversation — that is their deliberate act and their responsibility, and the summary must then carry the host file's seal warning. Discovering a *readable* token (shared or service-scoped) is a refusal case: stop before creating anything and report it via the failure summary with the host file's remediation. Never echo a token value — discovered or user-passed — back into the conversation.
+
 **Fail fast — never improvise around the unexpected.** When anything deviates from what this skill expects (a service missing, a CLI command failing, a URL unreachable, output in the wrong shape), stop and report it via the failure summary with the one next action — don't invent a workaround. A hacked-around mount looks successful but is inconsistent with every other node, and that inconsistency surfaces later as a debugging nightmare nobody can trace back to the improvisation. The only sanctioned deviation is one explicitly documented in the host reference file (e.g. a known CLI bug with its prescribed fallback).
 
 **Question policy — never ask what you can determine.**
@@ -53,7 +55,7 @@ If something failed, replace ✅ with the failure and the one next action. No ve
 
 0. **Self-update** — this copy may be stale. Canonical: `https://raw.githubusercontent.com/6022-labs/agentic-skills/main/skills/mount-agent-node/SKILL.md` (same pattern for the other files). Fetch and compare; if different, follow upstream for this mount and overwrite your stored copy if it's writable. Unreachable → note it in one line and skip (the one exemption from fail-fast).
 1. **Inputs** — ask (tersely): which project, which environment, service name. List candidates via the host CLI first so the user picks instead of typing.
-2. **Discover** — enumerate the environment's services (host file explains how). Identify: the shared DB server(s), Vault, Kubo, telemetry collector, and any existing agent-node (template).
+2. **Discover** — enumerate the environment's services (host file explains how). Identify: the shared DB server(s), Vault, Kubo, telemetry collector, and any existing agent-node (template). Resolve the Vault-token state now (host file) — a token refusal must fire before anything is created.
 3. **Database** — pick driver (single DB server → use it; several → ask). Provision with the bundled script (needs only python3 — it installs its own DB driver into a temp venv, works on macOS/Linux/Windows):
    ```bash
    python3 scripts/provision_agent_db.py <postgres|mysql|mariadb> "<admin-public-url>"

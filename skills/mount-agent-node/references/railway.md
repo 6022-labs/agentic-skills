@@ -68,7 +68,35 @@ Use Railway references wherever a value depends on another service or the servic
 
 (Reference prefix = the actual service name from discovery — `${{Postgres.…}}` only if the service is named `Postgres`.)
 
-**Copied verbatim from the template agent-node:** everything else in its `--kv` dump that isn't `RAILWAY_*`. At the time of writing: `BLOCKCHAIN__EVM_CHAINS__*__HTTP_URL`, `PAYMENT__FACILITATORS__*__BASE_URL`, `INFERENCE_LOOP__MAX_ITERATIONS`, `JWT__NONCE_TTL`, `JWT__TOKEN_TTL`, `RUNTIME_CLIENT__TIMEOUT`, `TELEMETRY__ENABLED`, `TELEMETRY__INSECURE`, `VAULT__KV_V1_MOUNT_PATH`, `VAULT__TOKEN`, `VITE_TX_GAS_MULTIPLIER` — but trust the live dump over this list; the config surface evolves. No template node → question policy from SKILL.md.
+**Copied verbatim from the template agent-node:** everything else in its `--kv` dump that isn't `RAILWAY_*` or `VAULT__TOKEN` (own rules below). At the time of writing: `BLOCKCHAIN__EVM_CHAINS__*__HTTP_URL`, `PAYMENT__FACILITATORS__*__BASE_URL`, `INFERENCE_LOOP__MAX_ITERATIONS`, `JWT__NONCE_TTL`, `JWT__TOKEN_TTL`, `RUNTIME_CLIENT__TIMEOUT`, `TELEMETRY__ENABLED`, `TELEMETRY__INSECURE`, `VAULT__KV_V1_MOUNT_PATH`, `VITE_TX_GAS_MULTIPLIER` — but trust the live dump over this list; the config surface evolves. No template node → question policy from SKILL.md.
+
+## Vault token (`VAULT__TOKEN`)
+
+The Vault token unlocks every agent's secrets, so it is exempt from copy-verbatim: never set it from a value you can read. Resolve its state during discovery (workflow step 2), before provisioning anything — a refusal must leave nothing behind. Two reads settle it:
+
+```bash
+# 1. Environment shared variables (no serviceId → the shared set)
+railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>") }'
+# 2. Template node with references intact (does it point at ${{shared.…}}?)
+railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>", serviceId: "<TEMPLATE_SID>", unrendered: true) }'
+```
+
+(MCP: `list-variables` if the connector can target the environment / return unrendered values; otherwise the CLI passthrough above. Sealed values are never returned by the API — unreadability is the signal, not an error.)
+
+First matching state wins:
+
+| State | Action |
+|---|---|
+| Shared set returns `VAULT__TOKEN` **with a readable value** — shared but not sealed | ⛔ Refuse the mount (failure summary). Next action: seal it — dashboard only, Project Settings → Shared Variables → ⋯ → Seal (permanent; no CLI/API can seal) — then re-run; or pass a token explicitly. |
+| Template's unrendered `VAULT__TOKEN` is `${{shared.VAULT__TOKEN}}` and no readable value surfaced — sealed shared | ✅ The sanctioned state. Set `VAULT__TOKEN=${{shared.VAULT__TOKEN}}` on the new node; the value is never seen by anyone, including you. |
+| Template's `VAULT__TOKEN` is a raw readable service-scoped value | ⛔ Refuse the mount. Next action: migrate it to a **sealed shared variable** (add as shared in the dashboard, seal it, swap the template's raw value for `${{shared.VAULT__TOKEN}}`), then re-run; or pass a token explicitly. |
+| Nothing readable and no shared reference — sealed service-scoped token, or fresh environment | Ask the user: a raw token (explicitly theirs to give — their responsibility), or, if a sealed shared `VAULT__TOKEN` already exists that the API can't show, say so and wire the `${{shared.VAULT__TOKEN}}` reference. |
+
+A token the user passes explicitly is always accepted — handing it over is their deliberate decision and their responsibility. Set it as a service variable on the new node, then append to the final summary:
+
+```
+⚠️ VAULT__TOKEN is readable on <service-name>. Seal it (service → Variables → ⋯ → Seal — dashboard-only, permanent), or better: move it to a sealed shared variable so future mounts wire ${{shared.VAULT__TOKEN}} without ever exposing it.
+```
 
 ## Create service + domain
 
