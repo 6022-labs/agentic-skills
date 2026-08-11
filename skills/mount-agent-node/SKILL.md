@@ -40,6 +40,8 @@ Railway is the only implementation today — use it without asking. When AWS/GCP
 - **Mixing testnet and mainnet chains on one node makes no sense** — if the requested chain set spans both (e.g. 80002 Polygon Amoy testnet + 137 Polygon mainnet), say so and make the user pick one side before continuing.
 - Questions are terse and direct: "Which RPC URL for chain 80002?" — no preamble, no explanation of why you ask. Batch related questions into a single prompt.
 
+**Every user-facing line is an instruction, not an essay.** This covers all output the user reads — questions, warnings, refusals, summaries. One pointed sentence each, imperative, naming the exact next action (the precise dashboard path, the precise command, the precise value to paste). No background, no justification, no options the user didn't ask for: every extra word buries the action, and a buried action doesn't get followed. Where the host file gives a message template, use it verbatim — fill the placeholders, add nothing.
+
 **Final summary — mandatory, terse, nothing more.** After a successful mount, report exactly:
 
 ```

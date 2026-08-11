@@ -27,8 +27,8 @@
       "files": [],
       "assertions": [
         "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token (env has no agent-node to copy from)",
-        "The Vault token question offered both paths: a raw token passed explicitly by the user (framed as their responsibility) or referencing an existing sealed shared VAULT__TOKEN",
-        "If a raw token was provided, the final summary appended the seal warning (seal it / move to sealed shared variable)",
+        "The Vault token question used the host file's Q1 template near-verbatim: paste it (user responsibility) or reply \"shared\" to reference an existing sealed shared VAULT__TOKEN — no added explanation",
+        "If a raw token was provided, the final summary appended the W1 seal warning near-verbatim (seal path + sealed-shared suggestion, nothing more)",
         "The token value was never echoed back in the conversation or summary",
         "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
         "Questions were terse and batched (no preamble/blabla)",
@@ -51,7 +51,7 @@
         "Resolved the vault-token state during discovery (shared-variables query + unrendered template variables) before provisioning anything",
         "Refused the mount on finding a readable VAULT__TOKEN — did not copy it anyway, and did not improvise a workaround",
         "Nothing was created: no database provisioned, no service created (or, if something had been created first, the cleanup contract was applied and reported)",
-        "Failure summary follows the template: failure line + exactly one next action (seal in dashboard / migrate to sealed shared + swap template to ${{shared.VAULT__TOKEN}} / pass a token explicitly)",
+        "Refusal used the host file's R1 or R2 template near-verbatim (matching the detected state): ⛔ line + Fix line with the exact dashboard path + the paste-a-token escape — no added background or justification",
         "The token value never appeared in the conversation or summary"
       ]
     }

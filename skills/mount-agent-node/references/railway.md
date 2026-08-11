@@ -83,19 +83,44 @@ railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>", servi
 
 (MCP: `list-variables` if the connector can target the environment / return unrendered values; otherwise the CLI passthrough above. Sealed values are never returned by the API — unreadability is the signal, not an error.)
 
-First matching state wins:
+First matching state wins. Refusals and the token ask use the message templates below **verbatim** (fill placeholders, add nothing — a padded message stops being followed):
 
 | State | Action |
 |---|---|
-| Shared set returns `VAULT__TOKEN` **with a readable value** — shared but not sealed | ⛔ Refuse the mount (failure summary). Next action: seal it — dashboard only, Project Settings → Shared Variables → ⋯ → Seal (permanent; no CLI/API can seal) — then re-run; or pass a token explicitly. |
-| Template's unrendered `VAULT__TOKEN` is `${{shared.VAULT__TOKEN}}` and no readable value surfaced — sealed shared | ✅ The sanctioned state. Set `VAULT__TOKEN=${{shared.VAULT__TOKEN}}` on the new node; the value is never seen by anyone, including you. |
-| Template's `VAULT__TOKEN` is a raw readable service-scoped value | ⛔ Refuse the mount. Next action: migrate it to a **sealed shared variable** (add as shared in the dashboard, seal it, swap the template's raw value for `${{shared.VAULT__TOKEN}}`), then re-run; or pass a token explicitly. |
-| Nothing readable and no shared reference — sealed service-scoped token, or fresh environment | Ask the user: a raw token (explicitly theirs to give — their responsibility), or, if a sealed shared `VAULT__TOKEN` already exists that the API can't show, say so and wire the `${{shared.VAULT__TOKEN}}` reference. |
+| Shared set returns `VAULT__TOKEN` **with a readable value** — shared but not sealed | ⛔ Refuse the mount with template R1. |
+| Template's unrendered `VAULT__TOKEN` is `${{shared.VAULT__TOKEN}}` and no readable value surfaced — sealed shared | ✅ The sanctioned state. Set `VAULT__TOKEN=${{shared.VAULT__TOKEN}}` on the new node; the value is never seen by anyone, including you. Nothing to tell the user. |
+| Template's `VAULT__TOKEN` is a raw readable service-scoped value | ⛔ Refuse the mount with template R2. |
+| Nothing readable and no shared reference — sealed service-scoped token, or fresh environment | Ask with template Q1 (batched with the other non-derivable questions). |
 
-A token the user passes explicitly is always accepted — handing it over is their deliberate decision and their responsibility. Set it as a service variable on the new node, then append to the final summary:
+**R1 — unsealed shared token:**
 
 ```
-⚠️ VAULT__TOKEN is readable on <service-name>. Seal it (service → Variables → ⋯ → Seal — dashboard-only, permanent), or better: move it to a sealed shared variable so future mounts wire ${{shared.VAULT__TOKEN}} without ever exposing it.
+⛔ Can't mount: VAULT__TOKEN is a readable shared variable.
+Fix: Project Settings → Shared Variables → ⋯ → Seal (dashboard-only, permanent), then re-run.
+Or paste a token here — your responsibility.
+```
+
+**R2 — readable service-scoped token:**
+
+```
+⛔ Can't mount: VAULT__TOKEN is readable on <template-service>.
+Fix: add VAULT__TOKEN as a shared variable, seal it, set <template-service>'s VAULT__TOKEN to ${{shared.VAULT__TOKEN}}, then re-run.
+Or paste a token here — your responsibility.
+```
+
+**Q1 — no token found:**
+
+```
+Vault token? Paste it (your responsibility — seal it after), or reply "shared" if a sealed shared VAULT__TOKEN already exists.
+```
+
+A token the user pastes is always accepted — their deliberate decision, their responsibility. Set it as a service variable on the new node, then append **W1** to the final summary:
+
+**W1 — seal warning after a user-passed token:**
+
+```
+⚠️ VAULT__TOKEN is readable on <service-name>.
+Seal it: service → Variables → ⋯ → Seal (dashboard-only, permanent). Better: move it to a sealed shared variable.
 ```
 
 ## Create service + domain
