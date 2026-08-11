@@ -48,8 +48,8 @@ Public proxy only — `railway.internal` unreachable from your machine. Postgres
 | `AGENT_IDENTITY__RUNTIME_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` |
 | `SIWE__URI` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` |
 | `VAULT__ADDRESS` | `http://${{Vault.RAILWAY_PRIVATE_DOMAIN}}:${{Vault.PORT}}` |
-| `IPFS__NODE_HTTP_URL` | `http://${{Kubo.RAILWAY_PRIVATE_DOMAIN}}:5001` |
-| `TELEMETRY__ENDPOINT` | `${{Grafana Alloy.RAILWAY_PRIVATE_DOMAIN}}:4317` |
+| `IPFS__NODE_HTTP_URL` | Kubo service in env → `http://${{Kubo.RAILWAY_PRIVATE_DOMAIN}}:5001`. None → IPFS is external: copy `IPFS__NODE_HTTP_URL` + `IPFS__BEARER_TOKEN` from template (no template → ask, sibling default) |
+| `TELEMETRY__ENDPOINT` | `${{"Grafana Alloy".RAILWAY_PRIVATE_DOMAIN}}:4317` (quotes required — service name has a space) |
 
 **Database (driver from workflow step 3; `<u>/<p>/<db>` from provision script):**
 
@@ -65,25 +65,23 @@ Public proxy only — `railway.internal` unreachable from your machine. Postgres
 
 ## Vault token (`VAULT__TOKEN`)
 
-Unlocks every agent's secrets ⇒ never set from a value you can read. Resolve state during discovery (step 2), before provisioning — a refusal must leave nothing behind. Two reads:
+Unlocks every agent's secrets ⇒ never set from a value you can read. Resolve state during discovery (step 2), before provisioning — a refusal must leave nothing behind. Read the template node twice via the GraphQL passthrough (values need the CLI: MCP `list-variables` redacts under OAuth; the env-level shared-set query — `variables` without `serviceId` — returns "Not Authorized"; use neither, don't diagnose them):
 
 ```bash
-# 1. Environment shared variables (no serviceId → shared set)
-railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>") }'
-# 2. Template node with references intact
 railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>", serviceId: "<TEMPLATE_SID>", unrendered: true) }'
+railway api 'query { variables(projectId: "<PID>", environmentId: "<EID>", serviceId: "<TEMPLATE_SID>") }'
 ```
 
-(MCP `list-variables` if it can target the environment / return unrendered; else the passthrough above. Sealed values are never returned by the API — unreadability is the signal, not an error.)
+Sealed values are never returned — empty/absent rendered value = sealed; that's the signal, not an error. First matching state wins; messages = templates below **verbatim** (fill placeholders, add nothing):
 
-First matching state wins; messages = templates below **verbatim** (fill placeholders, add nothing):
+| Unrendered | Rendered | State | Action |
+|---|---|---|---|
+| `${{shared.VAULT__TOKEN}}` | empty/absent | sealed shared | ✅ Sanctioned: set `VAULT__TOKEN=${{shared.VAULT__TOKEN}}` on the new node — value never seen by anyone, including you. Tell the user nothing. |
+| `${{shared.VAULT__TOKEN}}` | readable value | unsealed shared | ⛔ Refuse with R1 |
+| raw readable value | — | readable service-scoped | ⛔ Refuse with R2 |
+| absent | absent | sealed service-scoped or unset | Ask Q1 (batched with the other questions) |
 
-| State | Action |
-|---|---|
-| Shared set returns `VAULT__TOKEN` **with readable value** (shared, not sealed) | ⛔ Refuse with R1 |
-| Template unrendered `VAULT__TOKEN` = `${{shared.VAULT__TOKEN}}`, nothing readable (sealed shared) | ✅ Sanctioned: set `VAULT__TOKEN=${{shared.VAULT__TOKEN}}` on the new node — value never seen by anyone, including you. Tell the user nothing. |
-| Template `VAULT__TOKEN` = raw readable service-scoped value | ⛔ Refuse with R2 |
-| Nothing readable, no shared reference (sealed service-scoped or fresh env) | Ask Q1 (batched with the other questions) |
+No template node → Q1.
 
 **R1 — unsealed shared token:**
 

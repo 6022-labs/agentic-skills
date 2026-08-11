@@ -53,7 +53,7 @@ Failure → replace ✅ with the failure + one next action. No recap of steps.
 
 0. **Self-update** — canonical: `https://raw.githubusercontent.com/6022-labs/agentic-skills/main/skills/mount-agent-node/SKILL.md` (same pattern for other files). Fetch + compare; different → follow upstream this mount, overwrite stored copy if writable. Unreachable → one line, skip (only fail-fast exemption).
 1. **Inputs** — ask tersely: project, environment, service name. List candidates via host CLI first so user picks, not types.
-2. **Discover** — enumerate env services (host file). Identify: shared DB server(s), Vault, Kubo, telemetry collector, template agent-node. Resolve Vault-token state now (host file) — token refusal fires before anything is created.
+2. **Discover** — enumerate env services (host file). Identify: shared DB server(s), Vault, Kubo (may be absent — external IPFS node instead, host file), telemetry collector, template agent-node. Resolve Vault-token state now (host file) — token refusal fires before anything is created.
 3. **Database** — driver: one server → use it; several → ask. Provision:
    ```bash
    python3 scripts/provision_agent_db.py <postgres|mysql|mariadb> "<admin-public-url>"

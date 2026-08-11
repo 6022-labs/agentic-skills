@@ -27,11 +27,11 @@
       "expected_output": "No template node exists: asks terse targeted questions for non-derivable values (RPC URLs, facilitators, Vault token...) but not for derivable ones; Vault token asked as an explicit user hand-over (or sealed-shared reference); then provisions DB, sets variables, deploys; terse summary, with the seal warning if a raw token was provided.",
       "files": [],
       "assertions": [
-        "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token (env has no agent-node to copy from)",
+        "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token, and — since the env has no Kubo service — IPFS node URL + bearer token (env has no agent-node to copy from)",
         "The Vault token question used the host file's Q1 template near-verbatim: paste it (user responsibility) or reply \"shared\" to reference an existing sealed shared VAULT__TOKEN — no added explanation",
         "If a raw token was provided, the final summary appended the W1 seal warning near-verbatim (seal path + sealed-shared suggestion, nothing more)",
         "The token value was never echoed back in the conversation or summary",
-        "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
+        "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
         "Questions were terse and batched (no preamble/blabla)",
         "Offered sibling-environment values as defaults where visible",
         "Used Railway ${{...}} references (not resolved hostnames) for the reference-template variables and DB host/port",
