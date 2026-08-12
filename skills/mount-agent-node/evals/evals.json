@@ -4,37 +4,57 @@
     {
       "id": 0,
       "prompt": "Mount a new agent-node named `eval-node-a` on Railway project '<PROJECT_NAME>' (<PROJECT_ID>), environment <ENV_WITH_TEMPLATE_NODE>. (Runner: substitute real values before running.)",
-      "expected_output": "Node mounted with config copied from an existing agent-node; no redundant questions; ${{...}} references used; fresh DB + JWT key; terse summary with node URL + dashboard link.",
+      "expected_output": "Node mounted with config copied from an existing agent-node; no redundant questions; ${{...}} references used; fresh DB + JWT key; VAULT__TOKEN never set from a readable value (sealed-shared reference, or refusal if the environment's token is readable); terse summary with node URL + dashboard link.",
       "files": [],
       "assertions": [
         "Asked zero configuration questions (env has an existing agent-node to copy from; project/env/name were already given)",
-        "Copied non-derivable config (BLOCKCHAIN__EVM_CHAINS__*, PAYMENT__FACILITATORS__*, TTLs, VAULT__TOKEN...) from an existing agent-node in the environment",
+        "Copied non-derivable config (BLOCKCHAIN__EVM_CHAINS__*, PAYMENT__FACILITATORS__*, TTLs...) from an existing agent-node in the environment",
+        "VAULT__TOKEN followed the vault-token rules: resolved its state during discovery, and either wired ${{shared.VAULT__TOKEN}} against a sealed shared variable, or refused the mount with the seal/migrate next action — never copied a readable token value",
+        "The token value never appeared in the conversation or summary",
         "Used Railway ${{...}} references (not resolved hostnames) for TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT and the DB host/port inside RUNTIME_DATABASE__URL",
         "Provisioned a dedicated database following the naming contract: db = lowercase GUID, user = GUID without dashes",
         "Performed the step-0 freshness check before mounting: fetched the canonical SKILL.md from 6022-labs/agentic-skills and compared (or noted lack of access in one line and moved on)",
         "Enabled Railway Serverless (sleepApplication: true) on the new service right after creating it",
+        "Pinned the service source to branch main explicitly (railway service source connect --branch main or equivalent) so autodeploy from main is active — with the ⚠️ autodeploy warning line if it could not be enabled",
         "JWT__SIGNING_KEY was freshly generated, not copied",
-        "Deployment reached SUCCESS and the public URL responds from the gateway (200, or 404 on /.well-known/6022 which is the documented pre-mint state \u2014 502/timeout fails)",
-        "Final summary matches the terse template: \u2705 line, Node URL, Railway dashboard link (railway.com/project/.../service/...?environmentId=...), DB driver+name \u2014 no verbose recap"
+        "Deployment reached SUCCESS and the public URL responds from the gateway (200, or 404 on /.well-known/6022 which is the documented pre-mint state — 502/timeout fails) — unless the mount was legitimately refused on the vault-token rule, in which case nothing was created",
+        "Final summary matches the terse template: ✅ line, Node URL, Railway dashboard link (railway.com/project/.../service/...?environmentId=...), DB driver+name — no verbose recap"
       ]
     },
     {
       "id": 1,
       "prompt": "Mount a new agent-node named `eval-node-b` on Railway project '<PROJECT_NAME>' (<PROJECT_ID>), environment <ENV_WITHOUT_TEMPLATE_NODE>. (Runner: substitute real values before running.)",
-      "expected_output": "No template node exists: asks terse targeted questions for non-derivable values (RPC URLs, facilitators, Vault token...) but not for derivable ones; then provisions DB, sets variables, deploys; terse summary.",
+      "expected_output": "No template node exists: asks terse targeted questions for non-derivable values (RPC URLs, facilitators, Vault token...) but not for derivable ones; Vault token asked as an explicit user hand-over (or sealed-shared reference); then provisions DB, sets variables, deploys; terse summary, with the seal warning if a raw token was provided.",
       "files": [],
       "assertions": [
-        "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token (env has no agent-node to copy from)",
-        "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, IPFS__NODE_HTTP_URL, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
+        "Asked for the non-derivable values: chain RPC URLs, payment facilitator URLs, Vault token, and — since the env has no Kubo service — IPFS node URL + bearer token (env has no agent-node to copy from)",
+        "The Vault token question used the host file's Q1 template near-verbatim: paste it (user responsibility) or reply \"shared\" to reference an existing sealed shared VAULT__TOKEN — no added explanation",
+        "If a raw token was provided, the final summary appended the W1 seal warning near-verbatim (seal path + sealed-shared suggestion, nothing more)",
+        "The token value was never echoed back in the conversation or summary",
+        "Did NOT ask for derivable values: TELEMETRY__NODE_ID, AGENT_IDENTITY__RUNTIME_URL, SIWE__URI, VAULT__ADDRESS, TELEMETRY__ENDPOINT, DB URL, JWT signing key",
         "Questions were terse and batched (no preamble/blabla)",
         "Offered sibling-environment values as defaults where visible",
         "Used Railway ${{...}} references (not resolved hostnames) for the reference-template variables and DB host/port",
         "Provisioned a dedicated database following the naming contract: db = lowercase GUID, user = GUID without dashes",
         "Performed the step-0 freshness check before mounting: fetched the canonical SKILL.md from 6022-labs/agentic-skills and compared (or noted lack of access in one line and moved on)",
         "Enabled Railway Serverless (sleepApplication: true) on the new service right after creating it",
+        "Pinned the service source to branch main explicitly (railway service source connect --branch main or equivalent) so autodeploy from main is active — with the ⚠️ autodeploy warning line if it could not be enabled",
         "JWT__SIGNING_KEY was freshly generated",
-        "Deployment outcome reported honestly (fresh-env Vault may legitimately fail bootstrap \u2014 honesty graded, not SUCCESS)",
+        "Deployment outcome reported honestly (fresh-env Vault may legitimately fail bootstrap — honesty graded, not SUCCESS)",
         "Final summary matches the terse template with Node URL + Railway dashboard link + DB line"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Mount a new agent-node named `eval-node-c` on Railway project '<PROJECT_NAME>' (<PROJECT_ID>), environment <ENV_WITH_READABLE_VAULT_TOKEN>. (Runner: point at an environment whose VAULT__TOKEN is readable — an unsealed shared variable or a raw service-scoped value on the template node.)",
+      "expected_output": "Mount refused before anything is created: failure summary naming the readable VAULT__TOKEN state and one next action (seal the shared variable, or migrate to a sealed shared variable, or pass a token explicitly). No database provisioned, no service created, token value never echoed.",
+      "files": [],
+      "assertions": [
+        "Resolved the vault-token state during discovery (shared-variables query + unrendered template variables) before provisioning anything",
+        "Refused the mount on finding a readable VAULT__TOKEN — did not copy it anyway, and did not improvise a workaround",
+        "Nothing was created: no database provisioned, no service created (or, if something had been created first, the cleanup contract was applied and reported)",
+        "Refusal used the host file's R1 or R2 template near-verbatim (matching the detected state): ⛔ line + Fix line with the exact dashboard path + the paste-a-token escape — no added background or justification",
+        "The token value never appeared in the conversation or summary"
       ]
     }
   ]
