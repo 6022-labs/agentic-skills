@@ -29,3 +29,7 @@ If a skill bundles `scripts/requirements.txt`, `pip install -r` it once.
 ## Contributing
 
 Add a directory under `skills/` with a `SKILL.md` (frontmatter: `name`, `description`); deterministic logic in `scripts/`, docs in `references/`, verified data (addresses, ABIs) in bundled files — never hard-coded in prose. Add it to the table above and open a PR.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
