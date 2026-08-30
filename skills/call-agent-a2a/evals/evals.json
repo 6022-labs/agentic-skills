@@ -1,0 +1,61 @@
+{
+  "skill_name": "call-agent-a2a",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I need our agent to reach out to hermes.agents6022.eth and ask it for a summary of yesterday's incident. Our wallet key is in the AGENT_PRIVATE_KEY env var. Walk me through what happens, including if they charge for it.",
+      "expected_output": "Runs scripts/a2a_call.py with --target and --private-key-env. Describes: ENS url record via CCIP-Read, fetch and VERIFY /.well-known/6022, read the A2A url from the agent card's supportedInterfaces (not from the 6022 endpoints object), SendMessage, on 402 decode PAYMENT-REQUIRED, sign, retry with PAYMENT-SIGNATURE. Does not hand-build EIP-712.",
+      "files": [],
+      "assertions": [
+        "Prescribed scripts/a2a_call.py rather than hand-rolling the request and signature",
+        "Described resolving the ENS url text record via CCIP-Read as the first step",
+        "Stated the peer's /.well-known/6022 signature must be VERIFIED before paying, and gave the reason (paying an impostor at a hijacked origin)",
+        "Read the A2A endpoint from /.well-known/agent-card.json supportedInterfaces[].url — NOT from /.well-known/6022's endpoints object",
+        "Described the 402 handshake with the correct header names: PAYMENT-REQUIRED inbound, PAYMENT-SIGNATURE on the retry",
+        "Did not hand-write an EIP-712 payload, domain, or x402 envelope in the answer as something the user should construct themselves",
+        "Mentioned that the caller spends no gas (EIP-3009 / Permit2 are meta-transfers settled by the facilitator)"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Our orchestrator keeps getting 402 from one specific agent even though we're signing the payment. The signature looks right and the wallet has funds. It's been retrying for an hour. What's wrong and what should it do differently?",
+      "expected_output": "Says stop retrying — an identical challenge plus identical inputs produces an identical signature and fails identically. Names the likely causes in order, with a proxy stripping PAYMENT-SIGNATURE first. Notes the orchestrator behaviour: log, skip the turn, surface it, never retry-loop.",
+      "files": [],
+      "assertions": [
+        "Stated that retrying the same challenge with the same inputs is futile because the signature is byte-identical and fails identically",
+        "Named a proxy stripping the PAYMENT-SIGNATURE / PAYMENT-REQUIRED headers as the most likely cause of a persistent 402 with a valid signature",
+        "Offered other concrete causes distinguished by the 402's error field (no_matching_payment_requirements, invalid_payment_signature, authorization_expired) rather than guessing generically",
+        "Stated the correct orchestrator behaviour: log the failure, skip the turn, surface it — never retry-loop a broken payment",
+        "Did not suggest disabling payment verification or bypassing the gate as a remedy"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "When we sign an x402 payment for an agent, how do we know whether to use EIP-3009 or Permit2, and what's actually different about the two signatures? I want to understand it, not just run a script.",
+      "expected_output": "The callee decides: assetTransferMethod is detected on-chain from the asset and arrives inside the option's `extra` map, not at the top level. EIP-3009 signs over the token's own domain WITH a version field; Permit2 signs over Permit2's fixed domain with NO version, canonical address 0x000000000022D473030F116dDEE9F6B43aC78BA3, spender = the x402 proxy, witness binding the recipient.",
+      "files": [],
+      "assertions": [
+        "Stated the choice is the callee's, detected on-chain from the asset — not something the caller selects",
+        "Stated assetTransferMethod (and name/version) are read from the option's `extra` map, not from a top-level field of the challenge option",
+        "EIP-3009: signed over the TOKEN's own EIP-712 domain, which includes a version field, with name/version taken from extra",
+        "Permit2: signed over Permit2's FIXED domain which has NO version field, and flagged that adding one changes the digest and breaks recovery",
+        "Gave the canonical Permit2 address 0x000000000022D473030F116dDEE9F6B43aC78BA3 and identified the spender as the x402 proxy",
+        "Explained the Permit2 witness binds the final recipient (payTo) into the signature",
+        "Noted the nonce differs: bytes32 for EIP-3009, a uint256 for Permit2"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Is there any point calling an agent that charges nothing? One of the agents we talk to has a rule priced at \"0\" and we still get a 402 back, which seems like a bug.",
+      "expected_output": "Not a bug: a zero-price rule still requires a signed authorization, which is never settled on-chain. The signature identifies the calling wallet, which is what makes address-scoped free access possible. Distinguishes an unpriced agent (no rules, no 402) from a zero-price one.",
+      "files": [],
+      "assertions": [
+        "Stated the 402 on a zero-price rule is expected behaviour, not a bug",
+        "Explained a zero-price rule is signed but never settled on-chain",
+        "Explained the purpose: the signature identifies the calling wallet, which is what allows free access to be scoped to specific addresses",
+        "Distinguished an agent with NO payment rules (answers directly, no 402, no paymentMethods advertised) from one with a zero-price rule",
+        "Did not describe the zero-price 402 as a misconfiguration to be removed"
+      ]
+    }
+  ]
+}

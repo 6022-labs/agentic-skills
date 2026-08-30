@@ -1,0 +1,62 @@
+{
+  "skill_name": "orchestrate-agent-swarm",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Set up a support conversation on our Slack bridge with our facilitator agent and one human user, then have a specialist agent join once the facilitator decides it's needed. Give me the actual calls in order.",
+      "expected_output": "Registers the bridge (POST /bridges with kind slack + baseUrl) to obtain a UUID, registers participants (POST /participants/agents with collectionAddress+collectionTokenId, POST /participants/users with displayName), then POST /conversations with the bridge UUID, then POST /conversations/{id}/participants for the specialist. Never uses a string like \"slack-prod\" as bridgeId.",
+      "files": [],
+      "assertions": [
+        "Registered the bridge first via POST /bridges with kind \"slack\" and a baseUrl, and used the resulting UUID as bridgeId",
+        "Explicitly stated bridgeId is a UUID and that a name string like \"slack-prod\" is rejected by validation",
+        "Registered the agent participant via POST /participants/agents using collectionAddress + collectionTokenId (the on-chain identity), NOT an ensDomain",
+        "Passed collectionTokenId as a string rather than a JSON number",
+        "Registered the human via POST /participants/users with displayName",
+        "Opened the conversation with POST /conversations carrying bridgeId (+ participantIds, description)",
+        "Attached the specialist later via POST /conversations/{id}/participants with participantId",
+        "Recommended starting with the minimum viable swarm (facilitator + human) rather than registering every possible agent upfront"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Our facilitator wants to bring in a pricing specialist mid-thread. Should it just call that agent over A2A directly, or is there something better? And how does the specialist actually get invoked once it's in?",
+      "expected_output": "Attach it as a participant rather than calling peer-to-peer, so the shared thread carries its context to every later turn. The daemon then invokes it: ~1s tick, one ready participant per tick, no ordering guarantee, humans skipped, windowed filtered history, ENS card resolution, invocation over A2A with the orchestrator as payer.",
+      "files": [],
+      "assertions": [
+        "Recommended attaching the specialist as a conversation participant rather than calling it directly peer-to-peer",
+        "Gave the reason: attaching puts it in the shared thread so later turns carry its context, whereas a direct call leaves the rest of the swarm unaware",
+        "Described the daemon as the invoker: a background tick (~1s) picking one ready participant per tick",
+        "Stated there is no ordering guarantee across ticks, and warned against designing logic that assumes a fixed reply order",
+        "Stated human participants are skipped by the daemon",
+        "Stated the orchestrator is the payer for each agent it invokes (x402)",
+        "Warned against building a second code path that invokes participant agents outside the daemon loop"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "One agent in our conversation just never takes a turn. The others reply fine. It's attached to the conversation and we registered it correctly. Where do we look?",
+      "expected_output": "Most likely the participant's node is not actually operational, producing silently skipped turns: check it with serve-agent-endpoints' verifier, and check discovery via GET /remote-agents/{ensDomain}/url and /card. Also covers an unresolvable payment error being logged and the turn skipped.",
+      "files": [],
+      "assertions": [
+        "Identified that a participant whose node is not actually live produces silently skipped turns that look like quietness rather than failure",
+        "Prescribed verifying the participant node with the serve-agent-endpoints verifier (mint confirmed, signed well-known, live A2A)",
+        "Pointed at the broker's own resolution helpers GET /remote-agents/{ensDomain}/url and /card to check discovery from the orchestrator's side",
+        "Mentioned that an unresolvable PaymentRequiredError is logged and the turn skipped, never retried in a loop — another cause of a silently quiet participant",
+        "Did not suggest bypassing the daemon and calling the agent directly as the fix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Our Slack bridge posts the agent's reply into the thread, and separately we were thinking of writing that reply straight into the broker's message table so it's stored faster. Any reason not to?",
+      "expected_output": "Yes: POST /conversations/{id}/messages (IngestMessage) is the single write path, deliberately called after the bridge has actually delivered, so 'the human saw it' and 'it is stored' cannot drift apart. Writing directly forks that invariant.",
+      "files": [],
+      "assertions": [
+        "Said no — messages must enter only through POST /conversations/{id}/messages (IngestMessage)",
+        "Gave the invariant: the bridge calls it AFTER actually posting to the human-facing channel, so delivery and storage cannot drift apart",
+        "Stated that if the bridge did not deliver it, it should not be stored",
+        "Gave the ingest body correctly as participantId + content",
+        "Did not offer a direct-write shortcut as an acceptable optimization"
+      ]
+    }
+  ]
+}

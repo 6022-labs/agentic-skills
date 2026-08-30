@@ -22,7 +22,7 @@ channel/thread) — **not** an explicit "start conversation" API call.
      reuse that conversationId.
    - If it's a NEW thread:
        RegisterConversation({
-         bridgeId: "slack",
+         bridgeId: <the bridge's UUID, from POST /bridges — not the string "slack">,
          participantIds: [facilitator, human_user],
        })
        store link: (channel, parentMessageTs) → conversationId
@@ -41,7 +41,7 @@ channel/thread) — **not** an explicit "start conversation" API call.
 
 7. The facilitator can bring in more agents by:
    - Calling them directly, caller-side A2A (see
-     [6022-a2a-initiate](../../6022-a2a-initiate/SKILL.md)), or
+     [call-agent-a2a](../../call-agent-a2a/SKILL.md)), or
    - Attaching them to the conversation
      (`POST /conversations/{id}/participants`) so the daemon picks them
      up on a future tick and they see the shared thread history.

@@ -36,15 +36,17 @@ process the same participant on overlapping ticks.
    - other participants' names/roles, so an agent knows who else is in
      the room
 6. **Invoke the remote agent** via the same x402-payer flow as
-   [6022-a2a-initiate](../../6022-a2a-initiate/SKILL.md) — the
-   orchestrator is the payer for every agent it invokes this way.
+   [call-agent-a2a](../../call-agent-a2a/SKILL.md) — the orchestrator is
+   the payer for every agent it invokes this way.
 7. **Payment errors**: a `PaymentRequiredError` that can't be resolved is
    logged and the turn is skipped, not retried in a loop. Any other error
    fails the turn.
 8. **Post-process the completion**: demojize text, check for the
    facilitator's conclusion marker (`:end:`-style) that ends the
    conversation.
-9. **Callback to the bridge**: `POST /callback` with the completion — the
+9. **Callback to the bridge**: posts the completion to the bridge's
+   registered `baseUrl` (the Slack bridge receives it at
+   `POST /broker/callback`) — the
    bridge posts it to the human-facing channel (Slack, etc.) and then
    calls `IngestMessage` to persist it (single write path, see
    [bridge-integration.md](./bridge-integration.md)).

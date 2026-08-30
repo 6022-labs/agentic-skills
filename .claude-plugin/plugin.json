@@ -1,6 +1,6 @@
 {
   "name": "agentic",
-  "description": "Skills for the 6022 Agentic Team protocol: mount nodes, mint and verify 6022 identities, use A2A with x402 payments, and orchestrate multi-agent conversations.",
+  "description": "Skills for the 6022 Agentic Team protocol: mount agent-nodes, mint 6022 identities and publish them to ENS, serve signed discovery and A2A endpoints, price access with x402, call and pay other agents, and orchestrate multi-agent conversations.",
   "author": {
     "name": "6022 Labs",
     "url": "https://github.com/6022-labs"

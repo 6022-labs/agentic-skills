@@ -1,0 +1,49 @@
+{
+  "skill_name": "serve-agent-endpoints",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I'm wiring our external agent runtime (it's a Node service, already public at https://scout.example.com) into 6022. It's already minted — token 42 in collection 0xF897D5b759d225CD0505F77F101B7693cF861858 on Amoy. What exactly do I need to serve, and how do I sign it? Give me enough that I could implement the signer myself.",
+      "expected_output": "Names both /.well-known/6022 and /.well-known/agent-card.json, at the origin ROOT (not under /api), unauthenticated GET. Describes the detached ES256K JWS over the JCS-canonicalized body with signatures absent from the signed bytes, SHA-256 (not Keccak-256), r||s 64 bytes with the recovery byte dropped, kid = the evm address. Points at the pinned cross-repo test vector. Ends by directing to scripts/verify_node.py rather than declaring it done.",
+      "files": [],
+      "assertions": [
+        "Named both discovery documents: /.well-known/6022 AND /.well-known/agent-card.json",
+        "Stated the documents are served at the origin root, NOT under the /api public prefix, and are unauthenticated GET",
+        "Described signing as a detached ES256K JWS over the JCS (RFC 8785) canonicalized body",
+        "Stated the signatures field must be ABSENT from the bytes that are canonicalized and signed (sign, then attach)",
+        "Stated the digest is SHA-256, explicitly NOT Keccak-256 / personal_sign — the classic implementation error",
+        "Stated the wire signature is r||s (64 bytes), with go-ethereum's trailing recovery byte dropped",
+        "Stated kid in the protected header is the agent's evm address, and that verification means checking it against the on-chain registered address",
+        "Directed the user to run scripts/verify_node.py as the completion criterion rather than declaring the integration done from the steps alone",
+        "Did NOT claim the A2A endpoint URL is published in /.well-known/6022's endpoints object"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Our agent node is deployed and I can curl https://scout.example.com/.well-known/6022 and get JSON back. The ENS name scout.agents6022.eth points at it. Can I tell the team the agent is live?",
+      "expected_output": "Says no — a fetchable document proves neither a valid signature nor a working exchange. Runs/【directs to】 verify_node.py with --ens-domain, explains the nonce echo check catches canned replies from a gate, and explains exit 0 vs 2 (failed AND skipped both block 'live').",
+      "files": [],
+      "assertions": [
+        "Refused to call the node live on the basis of a 200 from the discovery document alone",
+        "Prescribed scripts/verify_node.py, passing --ens-domain since ENS is already published, as the actual arbiter",
+        "Explained that the A2A check sends a random nonce and requires it echoed back, because a status code cannot distinguish a live runtime from a gate returning a canned reply",
+        "Explained exit 0 = every applicable check passed, exit 2 = not proven live (a check FAILED or was SKIPPED), exit 1 = the verifier could not run",
+        "Mentioned that a skipped check (e.g. a priced node with no payment header) also blocks a 'live' verdict — an unverified check is not a passed one",
+        "Did not invent additional endpoints or checks that the skill does not define"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We integrated a partner's agent last week. Their /.well-known files are signed and verify fine, and POSTing to their A2A endpoint returns 200 with sensible-sounding text every time. But when our facilitator brings them into a conversation they never seem to actually engage with what was asked. What's going on?",
+      "expected_output": "Diagnoses the gate-answering-instead-of-the-runtime failure mode: a relay in front of a static origin returning canned or regex-matched replies. Prescribes the nonce loop-test (verify_node.py) as the discriminator, and states the rule that the gate authenticates and relays while the runtime produces content.",
+      "files": [],
+      "assertions": [
+        "Identified the canned-reply / gate-answering-instead-of-the-runtime failure mode as the likely cause",
+        "Explained why it survives ordinary checks: signatures verify and status codes are 200, so only content inspection catches it",
+        "Prescribed the nonce round-trip (scripts/verify_node.py, or an equivalent unique-token echo) as the discriminating test",
+        "Stated the rule that a gate in front of a static origin may authenticate and relay, but the runtime must produce the content",
+        "Did not recommend disabling payment gating or inventing a second endpoint as the fix"
+      ]
+    }
+  ]
+}

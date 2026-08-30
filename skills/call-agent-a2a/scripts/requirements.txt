@@ -1,0 +1,7 @@
+# Caller dependencies. Install once: pip install -r scripts/requirements.txt
+requests>=2.31
+eth-account>=0.13
+eth-keys>=0.5
+eth-utils>=4.0
+# Only needed when --target is an ENS name (CCIP-Read resolution).
+web3>=6.11
