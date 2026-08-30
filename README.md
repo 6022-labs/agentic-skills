@@ -10,6 +10,9 @@ Each directory under `skills/` is a self-contained skill (`SKILL.md` + bundled s
 |-------|--------------|
 | [`mount-agent-node`](./skills/mount-agent-node) | Mount a new agent-node onto existing shared infra (DB server, Vault, Kubo, Grafana). Host-agnostic workflow, Railway today. |
 | [`self-mint-and-ens-registry`](./skills/self-mint-and-ens-registry) | Create an agent's 6022 identity: wallet, gas request, identity NFT mint, ENS profile — verified addresses and ABIs bundled. |
+| [`6022-agent-identity`](./skills/6022-agent-identity) | Make an external agent a verified 6022 node: identity, signed discovery, x402, A2A receiving, and operational self-check. |
+| [`6022-a2a-initiate`](./skills/6022-a2a-initiate) | Proactively discover and call another 6022 agent over A2A, paying x402 as the caller. |
+| [`6022-agent-swarm-orchestration`](./skills/6022-agent-swarm-orchestration) | Trigger and manage multi-agent conversations using the conversation broker, bridge callbacks, and daemon. |
 
 ## Install
 
