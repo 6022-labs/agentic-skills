@@ -1,0 +1,60 @@
+{
+  "skill_name": "facilitate-agent-conversation",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "You're facilitating a conversation about a customer's refund dispute. There's a human from support and a clone agent in the thread. You think a pricing specialist agent (pricing.agents6022.eth) could settle the question of what the customer was actually charged. Do you call it yourself or get it added to the conversation? Explain your choice.",
+      "expected_output": "Recognizes both routes are legitimate and picks peer-to-peer for a single factual lookup: call and pay pricing.agents6022.eth from its own wallet, fold the answer into its reply, and attribute it. Notes it cannot attach anyone itself and would have to ask a human/bridge if the specialist should stay in the room.",
+      "files": [],
+      "assertions": [
+        "Identified both options: call the specialist peer-to-peer, or ask for it to be attached as a participant",
+        "Chose peer-to-peer for a single factual lookup, with a reason (one fact, no need for thread history)",
+        "Stated it would pay the specialist's x402 challenge from its own wallet, and pointed at the call-agent-a2a flow rather than hand-rolling the payment",
+        "Stated it CANNOT attach a participant itself, and that it would ask a human or the bridge in prose if the specialist should join the room",
+        "Noted the answer will read as its own words, so the specialist should be attributed in the reply",
+        "Mentioned the cost difference: an attached participant is invoked and paid on future turns, a peer call is one payment"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "I'm an expert agent in a 6022 conversation and my turn ended with: 'This conversation is not attached to one of your memory sessions yet. List your memory sessions, pick the one that fits this conversation, or create a new named one if none does. Then end your reply with that session's id alone on the very last line, nothing else on it.' What do I do exactly?",
+      "expected_output": "list_conversations to see memory sessions, pick or create_conversation for a new named one, then put the session id ALONE on the very last line of the reply. Warns that any text after the id, or the id inline, means the binding silently fails.",
+      "files": [],
+      "assertions": [
+        "Prescribed listing memory sessions with list_conversations",
+        "Prescribed creating a named session with create_conversation only if none fits",
+        "Stated the session id must be alone on the very last line of the reply, with nothing else on that line",
+        "Warned that a trailing explanation or an inline id means the binding silently does not happen",
+        "Explained the consequence of failing to bind: the agent starts from no context next time",
+        "Did not invent an API call or a tool for binding the session — the last line IS the mechanism"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm facilitating and I think we're done — everyone agrees on the plan. How do I actually close the conversation? And if someone replies afterwards, is it reopened?",
+      "expected_output": "Include :end: in the reply; there is no API call. Notes a human can also say :end:. A new message reopens a concluded conversation UNLESS its author is an agent, so the facilitator cannot reopen it by talking. Mentions the final summary turn.",
+      "files": [],
+      "assertions": [
+        "Stated the conversation is concluded by including the marker :end: in the reply",
+        "Stated there is no broker API call available to it for concluding",
+        "Mentioned it will typically get one final turn to write a closing summary for the participants",
+        "Stated a new message re-opens a concluded conversation, EXCEPT when the author is an agent/facilitator",
+        "Explained that exception's purpose: preventing agents from ping-ponging a closed thread",
+        "Did not claim the agent can re-open a thread by replying into it"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I keep getting invoked in this conversation and it looks like another agent already answered the question two messages ago, but I can't see their reply. Also sometimes I get asked twice in a row. Is something broken?",
+      "expected_output": "Not broken. History is windowed and filtered per participant, so missing context is expected. The daemon picks one ready participant per tick with no ordering guarantee, so repeated or out-of-order turns are normal. Advises asking rather than assuming, and writing self-contained replies.",
+      "files": [],
+      "assertions": [
+        "Explained the history is windowed and filtered per participant, so not seeing another agent's reply is expected rather than a fault",
+        "Explained the daemon picks one ready participant per tick with no ordering guarantee across ticks, so repeated or seemingly out-of-order turns are normal",
+        "Advised asking rather than assuming when context appears to be missing, and not contradicting decisions whose reasoning is not visible",
+        "Advised writing each reply so it stands on its own",
+        "Did not diagnose it as a bug or suggest calling the broker to inspect the conversation"
+      ]
+    }
+  ]
+}

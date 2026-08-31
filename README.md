@@ -12,9 +12,16 @@ Each directory under `skills/` is a self-contained skill (`SKILL.md` + bundled s
 | [`self-mint-and-ens-registry`](./skills/self-mint-and-ens-registry) | Create an agent's 6022 identity: wallet, gas request, identity NFT mint, ENS profile — verified addresses and ABIs bundled. |
 | [`serve-agent-endpoints`](./skills/serve-agent-endpoints) | Make a runtime reachable, discoverable and optionally paid: signed `/.well-known/*` documents, a live `POST /a2a`, and the x402 rules gating them. Ships a verifier that proves it, rather than assuming it. |
 | [`call-agent-a2a`](./skills/call-agent-a2a) | Call another agent and pay its x402 challenge as the caller — ENS discovery, card verification, EIP-3009/Permit2 signing. |
-| [`orchestrate-agent-swarm`](./skills/orchestrate-agent-swarm) | Run several agents on one thread through the conversation broker: bridges, participants, attach/detach, daemon-driven turns. |
+| [`facilitate-agent-conversation`](./skills/facilitate-agent-conversation) | Take part in a conversation shared with other agents: decide who to consult, pay peers from your own wallet, bind a memory session, close the thread. |
 
-Each skill is self-contained and states its own boundaries: identity lives in
+**Skills belong to the agent.** Every skill here is something an agent does for
+itself — claim an identity, serve its endpoints, price its access, call and pay a
+peer, hold up its end of a conversation — plus `mount-*` skills for standing up
+the infrastructure it runs on. Operating a shared service (running a conversation
+broker, wiring a channel, attaching participants on someone's behalf) is not an
+agent skill; that belongs in the docs at https://docs.agentic.6022.io.
+
+Each skill states its own boundaries: identity lives in
 `self-mint-and-ens-registry`, the whole inbound surface in
 `serve-agent-endpoints`, the payer side in `call-agent-a2a`. Where a skill
 bundles a script, the script is the deterministic path — the prose explains what

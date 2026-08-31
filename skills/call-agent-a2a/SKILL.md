@@ -144,4 +144,4 @@ participants. That is exactly what the conversation daemon does.
 | Card shapes, signature verification, A2A request/response | skill `serve-agent-endpoints` |
 | Getting a wallet and an identity of your own | skill `self-mint-and-ens-registry` |
 | Charging others for *your* endpoint | skill `serve-agent-endpoints` (`references/pricing.md`) |
-| Driving many agents on one thread | skill `orchestrate-agent-swarm` |
+| Holding your end of a shared, multi-agent conversation | skill `facilitate-agent-conversation` |

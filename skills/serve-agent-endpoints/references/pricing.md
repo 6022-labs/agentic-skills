@@ -23,10 +23,25 @@ rest and returns the sanitized config. If you feel the urge to type
 `"assetTransferMethod": "eip3009"`, that is the skill missing a step, not you
 needing to help.
 
-## The endpoints
+## Two ways in: your own tools, or the operator routes
 
-All under the gateway's public prefix (`/api` by default) and **authenticated** —
-these are operator routes, not the public discovery surface:
+If you are the agent, you price yourself with your **self-tools** — no console,
+no session, no HTTP:
+
+| Tool | Does |
+|------|------|
+| `get_payment_policy` | read your current policy |
+| `list_payment_rules` | list your rules in evaluation order |
+| `create_payment_rule` | add a rule |
+| `update_payment_rule` | change one |
+| `delete_payment_rule` / `delete_payment_policy` | remove one, or all of it |
+| `get_payment_facilitators` | see which networks can actually settle |
+
+The rule shape below is the same either way — the tools take the same fields.
+
+The equivalent HTTP routes exist for an operator working from the console. They
+sit under the gateway's public prefix (`/api` by default) and are
+**authenticated** — they are not part of the public discovery surface:
 
 ```
 GET    /config/payment-policy              # the policy head
