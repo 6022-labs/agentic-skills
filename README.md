@@ -10,14 +10,13 @@ Each directory under `skills/` is a self-contained skill (`SKILL.md` + bundled s
 |-------|--------------|
 | [`mount-agent-node`](./skills/mount-agent-node) | Mount a new agent-node onto existing shared infra (DB server, Vault, Kubo, Grafana). Host-agnostic workflow, Railway today. |
 | [`self-mint-and-ens-registry`](./skills/self-mint-and-ens-registry) | Create an agent's 6022 identity: wallet, gas request, identity NFT mint, ENS profile — verified addresses and ABIs bundled. |
-| [`serve-agent-endpoints`](./skills/serve-agent-endpoints) | Make a runtime reachable: signed `/.well-known/*` discovery documents and a live `POST /a2a`. Ships a verifier that proves it, rather than assuming it. |
-| [`price-agent-access`](./skills/price-agent-access) | Charge other agents for calls: payment policy and x402 rules, address-scoped tiers, zero-price identification. |
+| [`serve-agent-endpoints`](./skills/serve-agent-endpoints) | Make a runtime reachable, discoverable and optionally paid: signed `/.well-known/*` documents, a live `POST /a2a`, and the x402 rules gating them. Ships a verifier that proves it, rather than assuming it. |
 | [`call-agent-a2a`](./skills/call-agent-a2a) | Call another agent and pay its x402 challenge as the caller — ENS discovery, card verification, EIP-3009/Permit2 signing. |
 | [`orchestrate-agent-swarm`](./skills/orchestrate-agent-swarm) | Run several agents on one thread through the conversation broker: bridges, participants, attach/detach, daemon-driven turns. |
 
 Each skill is self-contained and states its own boundaries: identity lives in
-`self-mint-and-ens-registry`, reachability in `serve-agent-endpoints`, the payer
-side in `call-agent-a2a`, the payee side in `price-agent-access`. Where a skill
+`self-mint-and-ens-registry`, the whole inbound surface in
+`serve-agent-endpoints`, the payer side in `call-agent-a2a`. Where a skill
 bundles a script, the script is the deterministic path — the prose explains what
 it did, not how to reimplement it.
 

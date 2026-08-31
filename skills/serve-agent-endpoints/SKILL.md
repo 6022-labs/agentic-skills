@@ -1,18 +1,19 @@
 ---
 name: serve-agent-endpoints
 description: >-
-  Make an agent runtime reachable and discoverable in 6022: serve the signed
-  `/.well-known/6022` and `/.well-known/agent-card.json` discovery documents, and
-  accept Agent-to-Agent calls on `POST /a2a`. This is what turns a minted
-  identity into a node other agents can actually reach — an NFT with no live
-  endpoint is not a node. Use this whenever an agent needs to "expose
-  well-known", "publish its agent card", "receive A2A", "answer SendMessage",
-  "be discoverable", "be reachable", "sign its discovery document", or when an
-  external runtime (Hermes, OpenClaw, a Grok bot, any custom framework) is being
-  wired into 6022 and needs to serve the protocol's HTTP surface. Also use it to
-  verify a node is genuinely live — `scripts/verify_node.py` is the arbiter, not
-  your recollection of having deployed. Minting the identity itself belongs to
-  `self-mint-and-ens-registry`; paying to call another agent belongs to
+  Make an agent runtime reachable, discoverable and (optionally) paid: serve the
+  signed `/.well-known/6022` and `/.well-known/agent-card.json` discovery
+  documents, accept Agent-to-Agent calls on `POST /a2a`, and configure the x402
+  payment rules that gate them. This is what turns a minted identity into a node
+  other agents can actually reach — an NFT with no live endpoint is not a node.
+  Use this whenever an agent needs to "expose well-known", "publish its agent
+  card", "receive A2A", "answer SendMessage", "be discoverable", "be reachable",
+  "sign its discovery document", "charge for calls", "set a price", "monetize
+  itself", "earn from other agents", "add a payment rule", "gate its endpoint",
+  or when someone asks why an agent returns 402. Also use it to verify a node is
+  genuinely live — `scripts/verify_node.py` is the arbiter, not your recollection
+  of having deployed. Minting the identity itself belongs to
+  `self-mint-and-ens-registry`; paying to call someone else belongs to
   `call-agent-a2a`. Docs: https://docs.agentic.6022.io
 compatibility: python3 + `pip install -r scripts/requirements.txt` (requests, eth-keys, eth-utils; web3 only for the ENS check) to run the verifier.
 argument-hint: "[origin-url] [ens-domain] — both optional, discovered or asked if omitted"
@@ -46,15 +47,27 @@ beats a blocked one.
 
 ## Step 1 — know where the routes actually live
 
-Get this wrong and every later step verifies the wrong URL. On a standard
-agent-node, nginx is the single public surface and it splits the paths:
+Get this wrong and every later step verifies the wrong URL.
+
+**What must be publicly reachable — the whole list:**
 
 ```
-https://<origin>/.well-known/6022              → gateway, path passed verbatim
-https://<origin>/.well-known/agent-card.json   → gateway, path passed verbatim
-https://<origin>/api/a2a                       → gateway /a2a        (prefix stripped)
-https://<origin>/api/responses                 → gateway /responses  (prefix stripped)
-https://<origin>/                              → the web console SPA
+https://<origin>/.well-known/6022              the 6022 discovery document
+https://<origin>/.well-known/agent-card.json   the A2A discovery card
+<whatever URL the agent card advertises>       the A2A endpoint itself
+```
+
+That is the entire reachability contract. Anything else a runtime happens to
+serve — a configuration UI, a health endpoint, admin routes — is **not part of
+it** and is often better kept off the public origin entirely.
+
+On a stock agent-node those three land as follows, because nginx splits the
+paths:
+
+```
+https://<origin>/.well-known/*   → gateway, path passed verbatim (root)
+https://<origin>/api/a2a         → gateway /a2a       (prefix stripped)
+https://<origin>/api/responses   → gateway /responses (prefix stripped)
 ```
 
 The `/api` prefix is the gateway's `GATEWAY__PUBLIC_PREFIX` setting (default
@@ -67,9 +80,16 @@ remotely.
 Discovery documents stay at the **origin root** — never under `/api`. That is
 fixed by the well-known URI spec, and callers will not look anywhere else.
 
-If you are wiring a non-agent-node runtime (Hermes, OpenClaw, a custom server),
-you choose your own paths for A2A, but the two `/.well-known/*` paths and the
-document shapes are not yours to choose — they are what other agents parse.
+An agent-node also ships a web console for configuring the agent. It is a
+convenience, not a protocol surface: nothing in 6022 discovery references it, no
+caller fetches it, and an agent whose console is only reachable internally is
+exactly as reachable as one that exposes it. Do not treat it as evidence the node
+is live, and do not expose it merely to satisfy a check.
+
+If you are wiring a non-agent-node runtime (Hermes, OpenClaw, a custom server)
+there is no console and no `/api` prefix — you choose your own path for A2A and
+advertise it in the card. Only the two `/.well-known/*` paths and the document
+shapes are not yours to choose, because they are what other agents parse.
 
 ## Step 2 — serve the two discovery documents
 
@@ -111,11 +131,30 @@ Two rules that are protocol-level, not stylistic:
   and its one hard rule: the gate authenticates and relays, the runtime produces
   the content.
 
-If the callee prices its access, `/a2a` sits behind the same x402 gate as
-`/responses` — configuring that is `price-agent-access`. An unpriced node simply
-answers.
+## Step 4 — decide whether to charge (optional)
 
-## Step 4 — verify, don't assert
+`/a2a` and `/responses` share one access chain, so pricing is a property of the
+agent, not of a route: price it and every way of calling it is priced. An agent
+with no payment rules simply answers, and omits `paymentMethods` from its
+discovery document.
+
+If you do want to charge, the whole configuration — policy and rule routes, rule
+shape, atomic-unit prices, address-scoped tiers, and zero-price rules that
+identify a caller without billing them — is in `references/pricing.md`. One rule
+from it is worth stating here because it is the one that silently breaks
+payments:
+
+> Never set `assetTransferMethod`, `eip712Name` or `eip712Version` yourself.
+> The runtime detects them from the asset on-chain when the rule is saved. A
+> guessed EIP-712 domain produces a digest that recovers to a stranger's
+> address, so correctly-signed callers are rejected forever with no error that
+> points at the cause.
+
+A priced node changes what "verified" means in the next step: the verifier cannot
+complete an A2A turn without paying, so it reports that half as unverified rather
+than passing it.
+
+## Step 5 — verify, don't assert
 
 ```bash
 pip install -r scripts/requirements.txt        # once
@@ -174,7 +213,7 @@ explicitly that the exchange half went unverified.
 | `/a2a` shapes, discovery order, gate-in-front pattern | `references/a2a.md` |
 | Failure modes seen with real external runtimes | `references/frameworks.md` |
 | Minting, ENS records, contract addresses | skill `self-mint-and-ens-registry` |
-| Charging for access | skill `price-agent-access` |
+| Payment policy, rules, tiers, zero-price identification | `references/pricing.md` |
 | Calling *another* agent and paying it | skill `call-agent-a2a` |
 
 Anything you would otherwise hardcode — a contract address, an ABI — is not in

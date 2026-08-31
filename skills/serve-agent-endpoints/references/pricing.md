@@ -1,38 +1,14 @@
----
-name: price-agent-access
-description: >-
-  Charge other agents for calling yours: configure an agent-node's payment policy
-  and x402 payment rules so `/responses` and `/a2a` answer with an HTTP 402
-  challenge and settle on-chain after each turn. Use this whenever an agent needs
-  to "charge for calls", "set a price", "monetize itself", "earn from other
-  agents", "add a payment rule", "make itself free for specific wallets",
-  "gate its endpoint", or when someone asks why an agent returns 402 or how its
-  pricing is decided. Covers zero-price rules (signature-only identification),
-  per-caller address patterns, and why the transfer method and EIP-712 domain are
-  detected on-chain rather than configured. Paying *another* agent is
-  `call-agent-a2a`; serving the endpoints themselves is `serve-agent-endpoints`.
-  Docs: https://docs.agentic.6022.io
-compatibility: An agent-node whose identity is already minted, an authenticated session against its gateway, and an RPC configured for the rule's chain.
-argument-hint: "[price] [asset] [network] — asked tersely if omitted"
----
+# Pricing access with x402
 
-# Price your agent's access
+The gate that turns an answering agent into a paid one. It sits on the **same
+routes** this skill already serves — `/responses` and `/a2a` share one access
+chain — so pricing an agent prices every way of talking to it. You cannot charge
+for one and give away the other.
 
-An agent that answers for free is reachable. An agent with a payment policy is a
-**business**: callers hit `402`, sign a token transfer, and the facilitator
-settles on-chain once the answer is delivered.
-
-The policy sits in front of `/responses` and `/a2a` alike — both routes share one
-access gate, so pricing an agent prices every way of talking to it. You cannot
-charge for one and give away the other.
-
-## Step 0 — self-update
-
-Canonical source:
-`https://raw.githubusercontent.com/6022-labs/agentic-skills/main/skills/price-agent-access/SKILL.md`
-(same URL pattern for every file). Fetch, compare, follow upstream this run if
-they differ, overwrite your stored copy if writable. Unreachable → one line,
-continue.
+It is also why `paymentMethods` appears in `/.well-known/6022`: that field is
+derived by listing the agent's payment rules and taking the distinct sorted
+method names. Configure no rules and the field is omitted; configure one and
+callers are told to expect a 402 before they ever send a turn.
 
 ## The one rule that prevents a broken price
 
@@ -140,7 +116,7 @@ rule. If you want no friction at all, define no rules.
 
 That ordering is why a failed turn must return a non-2xx status: settlement is
 tied to success, so a `200` wrapping an error would charge for nothing. If you
-are implementing the endpoints yourself, see `serve-agent-endpoints`.
+are implementing the endpoints yourself, see this skill.
 
 There is also a free-access shortcut ahead of x402 in the chain: a caller
 presenting a valid JWT whose address matches a zero-price rule is let through
@@ -159,7 +135,7 @@ curl -si -X POST https://agent.example.com/api/a2a \
   | head -20
 
 # then complete the round-trip with a funded wallet
-python ../call-agent-a2a/scripts/a2a_call.py --target https://agent.example.com \
+python ../../call-agent-a2a/scripts/a2a_call.py --target https://agent.example.com \
        --message "hi" --private-key-env AGENT_PRIVATE_KEY
 ```
 
@@ -167,12 +143,3 @@ A `402` whose `accepts[]` is empty means no rule matched the caller — usually
 `addressPatterns` narrower than intended. A `402` that repeats after a correctly
 signed retry is almost always a proxy stripping the payment headers; see
 `call-agent-a2a/references/x402-payer.md`.
-
-## When to go deeper
-
-| Question | Where |
-|----------|-------|
-| Challenge/payload shapes, EIP-3009 vs Permit2, refusal reasons | `call-agent-a2a/references/x402-payer.md` |
-| Serving the gated endpoints, verifying the node is live | skill `serve-agent-endpoints` |
-| Paying another agent | skill `call-agent-a2a` |
-| The rule strategy's validation, verbatim | `agentic-agent-node/src/agent_payment/services/x402_payment_method_strategy.go` |

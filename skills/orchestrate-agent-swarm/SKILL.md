@@ -126,10 +126,43 @@ DELETE /conversations/{id}/participants/{participantId}
 GET    /conversations/{id}/participants
 ```
 
-The typical trigger is escalation: a facilitator decides a specialist is needed
-and attaches it, rather than calling it peer-to-peer. Attaching puts it in the
-shared thread, so every later turn carries its context automatically — a
-peer-to-peer call would leave the rest of the swarm unaware the exchange happened.
+The typical trigger is escalation: a specialist is needed mid-thread. Attaching
+puts it in the shared thread, so every later turn carries its context
+automatically — a peer-to-peer call would leave the rest of the swarm unaware the
+exchange happened.
+
+**These calls are made by an operator or a bridge, not by an agent in the
+conversation.** See the next section — it is the single most misleading thing you
+can assume here.
+
+## What a facilitator agent can and cannot do
+
+A facilitator is a *participant with a role*, not a controller. Its turn carries
+the channel description, the participant list, the initial request, the latest
+message and a message count — and **no conversation id, no broker URL, and no
+credential**. Its output is text.
+
+| A facilitator can | A facilitator cannot |
+|---|---|
+| steer the discussion in its reply | attach or detach a participant |
+| name another agent, in prose, as someone who should join | open or close a conversation via the API |
+| end the conversation by including `:end:` in its reply | invoke another participant directly |
+
+`:end:` is its one structural lever, and it works because the processor scans
+completions for that marker. There is no equivalent marker for "add this agent" —
+`AttachParticipant` is reachable only from `POST /conversations/{id}/participants`
+and from the initial `participantIds` at registration. Nothing in the completion
+path can attach anyone.
+
+So "the facilitator escalates to a specialist" is a description of intent, not of
+mechanism. In practice the facilitator says a specialist is needed, and a human
+or a bridge acts on that by calling the attach route. If you want autonomous
+escalation, that logic lives in whatever watches the conversation — it is not
+something the facilitator can do from inside its turn.
+
+(A template author can inject a `potential_agent` parameter to tell a facilitator
+about an agent it may reference by name. That is read-only prompt context — it
+supplies vocabulary, not the ability to act.)
 
 ## Step 5 — let the daemon drive turns
 

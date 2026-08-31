@@ -19,17 +19,19 @@
     },
     {
       "id": 1,
-      "prompt": "Our facilitator wants to bring in a pricing specialist mid-thread. Should it just call that agent over A2A directly, or is there something better? And how does the specialist actually get invoked once it's in?",
-      "expected_output": "Attach it as a participant rather than calling peer-to-peer, so the shared thread carries its context to every later turn. The daemon then invokes it: ~1s tick, one ready participant per tick, no ordering guarantee, humans skipped, windowed filtered history, ENS card resolution, invocation over A2A with the orchestrator as payer.",
+      "prompt": "Our facilitator agent wants to bring in a pricing specialist mid-thread. Can it just attach that agent to the conversation itself, or call it over A2A directly? And how does the specialist actually get invoked once it's in?",
+      "expected_output": "States the facilitator CANNOT attach: its turn carries no conversation id, no broker URL and no credential, and nothing in the completion path attaches anyone \u2014 its only structural lever is the :end: marker. An operator or bridge calls POST /conversations/{id}/participants. Then describes the daemon: ~1s tick, one ready participant per tick, no ordering guarantee, humans skipped, windowed filtered history, orchestrator as payer.",
       "files": [],
       "assertions": [
-        "Recommended attaching the specialist as a conversation participant rather than calling it directly peer-to-peer",
-        "Gave the reason: attaching puts it in the shared thread so later turns carry its context, whereas a direct call leaves the rest of the swarm unaware",
+        "Stated the facilitator agent cannot attach a participant itself \u2014 it has no conversation id, no broker URL and no credential in its turn",
+        "Stated that nothing in the completion path can attach anyone; AttachParticipant is reachable only from POST /conversations/{id}/participants and the initial participantIds",
+        "Identified :end: as the facilitator's only structural lever over the conversation",
+        "Explained the facilitator can ask for a specialist in prose, and an operator or bridge acts on that by calling the attach route",
+        "Explained why attaching beats a peer-to-peer A2A call: the shared thread carries the specialist's context into every later turn",
         "Described the daemon as the invoker: a background tick (~1s) picking one ready participant per tick",
-        "Stated there is no ordering guarantee across ticks, and warned against designing logic that assumes a fixed reply order",
+        "Stated there is no ordering guarantee across ticks, and warned against assuming a fixed reply order",
         "Stated human participants are skipped by the daemon",
-        "Stated the orchestrator is the payer for each agent it invokes (x402)",
-        "Warned against building a second code path that invokes participant agents outside the daemon loop"
+        "Stated the orchestrator is the payer for each agent it invokes (x402)"
       ]
     },
     {
@@ -41,7 +43,7 @@
         "Identified that a participant whose node is not actually live produces silently skipped turns that look like quietness rather than failure",
         "Prescribed verifying the participant node with the serve-agent-endpoints verifier (mint confirmed, signed well-known, live A2A)",
         "Pointed at the broker's own resolution helpers GET /remote-agents/{ensDomain}/url and /card to check discovery from the orchestrator's side",
-        "Mentioned that an unresolvable PaymentRequiredError is logged and the turn skipped, never retried in a loop — another cause of a silently quiet participant",
+        "Mentioned that an unresolvable PaymentRequiredError is logged and the turn skipped, never retried in a loop \u2014 another cause of a silently quiet participant",
         "Did not suggest bypassing the daemon and calling the agent directly as the fix"
       ]
     },
@@ -51,7 +53,7 @@
       "expected_output": "Yes: POST /conversations/{id}/messages (IngestMessage) is the single write path, deliberately called after the bridge has actually delivered, so 'the human saw it' and 'it is stored' cannot drift apart. Writing directly forks that invariant.",
       "files": [],
       "assertions": [
-        "Said no — messages must enter only through POST /conversations/{id}/messages (IngestMessage)",
+        "Said no \u2014 messages must enter only through POST /conversations/{id}/messages (IngestMessage)",
         "Gave the invariant: the bridge calls it AFTER actually posting to the human-facing channel, so delivery and storage cannot drift apart",
         "Stated that if the bridge did not deliver it, it should not be stored",
         "Gave the ingest body correctly as participantId + content",

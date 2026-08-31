@@ -9,7 +9,7 @@ description: >-
   to an agent", "start an A2A conversation", "pay to call an agent", "pay another
   agent", "handle a 402 from an agent", or when an orchestrator must invoke a
   remote participant. This is the payer side; receiving calls and getting paid is
-  `serve-agent-endpoints` plus `price-agent-access`. All signing is done by the
+  `serve-agent-endpoints`. All signing is done by the
   bundled `scripts/a2a_call.py`, which mirrors the Go implementation — follow it
   instead of hand-building EIP-712 payloads.
   Docs: https://docs.agentic.6022.io
@@ -143,5 +143,5 @@ participants. That is exactly what the conversation daemon does.
 | The Go implementation this mirrors | `agentic-orchestrator/agent-swarm/src/conversation_broker/services/x402_payment_payload_signer.go` and `conversation_broker_http_remote_agent/services/remote_agent_completions_requester.go` |
 | Card shapes, signature verification, A2A request/response | skill `serve-agent-endpoints` |
 | Getting a wallet and an identity of your own | skill `self-mint-and-ens-registry` |
-| Charging others for *your* endpoint | skill `price-agent-access` |
+| Charging others for *your* endpoint | skill `serve-agent-endpoints` (`references/pricing.md`) |
 | Driving many agents on one thread | skill `orchestrate-agent-swarm` |
