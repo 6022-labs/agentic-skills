@@ -18,11 +18,12 @@ argument-hint: "[bridge] [participants] [description] — the thread to open and
 # Orchestrate a multi-agent conversation
 
 `call-agent-a2a` is one caller reaching one callee. This is **N agents on one
-thread**, where nobody calls anybody directly: participants join a conversation,
-and a background daemon decides who speaks next and invokes them.
+thread**: participants join a conversation, and a background daemon decides who
+speaks next and invokes them, rather than each agent invoking the next.
 
-That inversion is the whole design. It is also the rule most easily broken —
-see "the two write paths you must not fork" below.
+That inversion applies to **participants**. An agent inside the conversation is
+still free to call agents *outside* it as tools, and a facilitator routinely
+does — see "what a facilitator agent can and cannot do".
 
 ## Step 0 — self-update
 
@@ -53,13 +54,13 @@ conversation would give the same agent several identities and split its history.
    The point is that "the human saw it" and "it is in the conversation" cannot
    drift apart — if the bridge did not deliver it, it is not stored.
 
-2. **Agents are invoked only by the daemon.** Do not add a second path that
-   calls participant agents directly from outside the loop. You will fork
-   message ordering and history, and the symptom (an agent replying to context
-   it should not have, or missing context it should) appears far from the cause.
-
-If you need an agent to answer *outside* a conversation, that is `call-agent-a2a`
-— a different thing, deliberately.
+2. **Participants of this conversation are invoked only by the daemon.** Note
+   the scope: a facilitator calling some *other* agent peer-to-peer as a tool is
+   normal and expected (see below). What must not exist is a second path that
+   makes a **participant** take a turn from outside the loop — two sources of
+   turns fork message ordering and history, and the symptom (an agent replying to
+   context it should not have, or missing context it should) surfaces far from
+   the cause.
 
 ## Step 1 — register the bridge (once)
 
@@ -127,42 +128,47 @@ GET    /conversations/{id}/participants
 ```
 
 The typical trigger is escalation: a specialist is needed mid-thread. Attaching
-puts it in the shared thread, so every later turn carries its context
-automatically — a peer-to-peer call would leave the rest of the swarm unaware the
-exchange happened.
+puts it in the shared thread, so it speaks in its own name and every later turn
+carries its context. The alternative — a facilitator calling it peer-to-peer as
+a tool — is equally valid and means something different; the trade-off is in the
+next section.
 
-**These calls are made by an operator or a bridge, not by an agent in the
-conversation.** See the next section — it is the single most misleading thing you
-can assume here.
+**Attach and detach are called by an operator or a bridge, never by an agent
+inside the conversation.**
 
 ## What a facilitator agent can and cannot do
 
-A facilitator is a *participant with a role*, not a controller. Its turn carries
-the channel description, the participant list, the initial request, the latest
-message and a message count — and **no conversation id, no broker URL, and no
-credential**. Its output is text.
+A facilitator is a **full 6022 agent** that happens to hold a role in this
+conversation — not a marker-emitter. Inside its own turn it has its reasoning,
+its MCP connections, shell (`run_command`), a wallet, and `sign_x402_payment` —
+a self-tool that exists precisely so an agent can pay another agent. It can and
+routinely should consult other agents on its own judgment, discovering, calling
+and paying them exactly as `call-agent-a2a` describes.
+
+What it does **not** have is a handle on *this conversation*. Its turn carries
+the channel description, participant list, initial request, latest message and a
+message count — no conversation id, no broker URL, no credential.
 
 | A facilitator can | A facilitator cannot |
 |---|---|
-| steer the discussion in its reply | attach or detach a participant |
-| name another agent, in prose, as someone who should join | open or close a conversation via the API |
-| end the conversation by including `:end:` in its reply | invoke another participant directly |
+| call any non-participant agent peer-to-peer, and pay it | attach or detach a participant of this conversation |
+| use its MCPs, tools and shell to gather what it needs | open, conclude or re-open a conversation via the broker API |
+| synthesize all of that into its own reply | make another *participant* take a turn out of band |
+| conclude the conversation with `:end:` in its reply | |
 
-`:end:` is its one structural lever, and it works because the processor scans
-completions for that marker. There is no equivalent marker for "add this agent" —
-`AttachParticipant` is reachable only from `POST /conversations/{id}/participants`
-and from the initial `participantIds` at registration. Nothing in the completion
-path can attach anyone.
+Both routes to a specialist are legitimate, and they mean different things:
 
-So "the facilitator escalates to a specialist" is a description of intent, not of
-mechanism. In practice the facilitator says a specialist is needed, and a human
-or a bridge acts on that by calling the attach route. If you want autonomous
-escalation, that logic lives in whatever watches the conversation — it is not
-something the facilitator can do from inside its turn.
+- **Call it peer-to-peer.** The facilitator asks, pays, and folds the answer into
+  its own reply. Fast, needs nobody's permission, and the specialist stays
+  invisible — it has no thread history, and the other participants see the
+  facilitator's words rather than the specialist's.
+- **Attach it as a participant.** It joins the shared thread, receives the
+  windowed history, speaks in its own name, and keeps context across later turns.
+  But the facilitator cannot do this itself — an operator or bridge calls the
+  attach route, typically after the facilitator asks for it in prose.
 
-(A template author can inject a `potential_agent` parameter to tell a facilitator
-about an agent it may reference by name. That is read-only prompt context — it
-supplies vocabulary, not the ability to act.)
+Choose peer-to-peer for a one-shot lookup; attach when the specialist should stay
+in the room.
 
 ## Step 5 — let the daemon drive turns
 

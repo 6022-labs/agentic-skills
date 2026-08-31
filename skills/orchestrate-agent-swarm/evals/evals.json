@@ -20,18 +20,17 @@
     {
       "id": 1,
       "prompt": "Our facilitator agent wants to bring in a pricing specialist mid-thread. Can it just attach that agent to the conversation itself, or call it over A2A directly? And how does the specialist actually get invoked once it's in?",
-      "expected_output": "States the facilitator CANNOT attach: its turn carries no conversation id, no broker URL and no credential, and nothing in the completion path attaches anyone \u2014 its only structural lever is the :end: marker. An operator or bridge calls POST /conversations/{id}/participants. Then describes the daemon: ~1s tick, one ready participant per tick, no ordering guarantee, humans skipped, windowed filtered history, orchestrator as payer.",
+      "expected_output": "Distinguishes the two routes. The facilitator CAN call the specialist peer-to-peer and pay it \u2014 it has a wallet, MCPs, run_command and the sign_x402_payment self-tool \u2014 and folds the answer into its own reply. It CANNOT attach the specialist to the conversation: its turn carries no conversation id, no broker URL, no credential, so an operator or bridge calls the attach route. Explains what each route means, then describes the daemon invoking attached participants.",
       "files": [],
       "assertions": [
-        "Stated the facilitator agent cannot attach a participant itself \u2014 it has no conversation id, no broker URL and no credential in its turn",
-        "Stated that nothing in the completion path can attach anyone; AttachParticipant is reachable only from POST /conversations/{id}/participants and the initial participantIds",
-        "Identified :end: as the facilitator's only structural lever over the conversation",
-        "Explained the facilitator can ask for a specialist in prose, and an operator or bridge acts on that by calling the attach route",
-        "Explained why attaching beats a peer-to-peer A2A call: the shared thread carries the specialist's context into every later turn",
-        "Described the daemon as the invoker: a background tick (~1s) picking one ready participant per tick",
-        "Stated there is no ordering guarantee across ticks, and warned against assuming a fixed reply order",
-        "Stated human participants are skipped by the daemon",
-        "Stated the orchestrator is the payer for each agent it invokes (x402)"
+        "Stated the facilitator CAN call a non-participant agent peer-to-peer over A2A and pay it, using its own wallet (sign_x402_payment / MCP / run_command)",
+        "Stated the facilitator CANNOT attach a participant itself \u2014 no conversation id, no broker URL, no credential in its turn \u2014 so an operator or bridge calls POST /conversations/{id}/participants",
+        "Explained what peer-to-peer means: the answer arrives as the facilitator's own words and the specialist stays invisible to other participants with no thread history",
+        "Explained what attaching means: the specialist speaks in its own name, receives the windowed history, and keeps context across later turns",
+        "Did NOT claim the facilitator's only lever is the :end: marker",
+        "Described the daemon as the invoker of attached participants: ~1s tick, one ready participant per tick",
+        "Stated there is no ordering guarantee across ticks",
+        "Stated the orchestrator is the payer for each participant it invokes (x402)"
       ]
     },
     {
