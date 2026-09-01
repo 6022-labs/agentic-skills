@@ -20,7 +20,7 @@
     },
     {
       "id": 1,
-      "prompt": "Our agent node is deployed and I can curl https://scout.example.com/.well-known/6022 and get JSON back. The ENS name scout.agents6022.eth points at it. Can I tell the team the agent is live?",
+      "prompt": "Our agent node is deployed and I can curl https://scout.example.com/.well-known/6022 and get JSON back. The ENS name scout.agents.80002.6022.eth points at it. Can I tell the team the agent is live?",
       "expected_output": "Says no \u2014 a fetchable document proves neither a valid signature nor a working exchange. Runs/\u3010directs to\u3011 verify_node.py with --ens-domain, explains the nonce echo check catches canned replies from a gate, and explains exit 0 vs 2 (failed AND skipped both block 'live').",
       "files": [],
       "assertions": [

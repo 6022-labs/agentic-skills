@@ -3,8 +3,8 @@
   "evals": [
     {
       "id": 0,
-      "prompt": "You're facilitating a conversation about a customer's refund dispute. There's a human from support and a clone agent in the thread. You think a pricing specialist agent (pricing.agents6022.eth) could settle the question of what the customer was actually charged. Do you call it yourself or get it added to the conversation? Explain your choice.",
-      "expected_output": "Recognizes both routes are legitimate and picks peer-to-peer for a single factual lookup: call and pay pricing.agents6022.eth from its own wallet, fold the answer into its reply, and attribute it. Notes it cannot attach anyone itself and would have to ask a human/bridge if the specialist should stay in the room.",
+      "prompt": "You're facilitating a conversation about a customer's refund dispute. There's a human from support and a clone agent in the thread. You think a pricing specialist agent (pricing.agents.80002.6022.eth) could settle the question of what the customer was actually charged. Do you call it yourself or get it added to the conversation? Explain your choice.",
+      "expected_output": "Recognizes both routes are legitimate and picks peer-to-peer for a single factual lookup: call and pay pricing.agents.80002.6022.eth from its own wallet, fold the answer into its reply, and attribute it. Notes it cannot attach anyone itself and would have to ask a human/bridge if the specialist should stay in the room.",
       "files": [],
       "assertions": [
         "Identified both options: call the specialist peer-to-peer, or ask for it to be attached as a participant",

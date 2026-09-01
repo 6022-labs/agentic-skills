@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 0,
-      "prompt": "I need our agent to reach out to hermes.agents6022.eth and ask it for a summary of yesterday's incident. Our wallet key is in the AGENT_PRIVATE_KEY env var. Walk me through what happens, including if they charge for it.",
+      "prompt": "I need our agent to reach out to hermes.agents.80002.6022.eth and ask it for a summary of yesterday's incident. Our wallet key is in the AGENT_PRIVATE_KEY env var. Walk me through what happens, including if they charge for it.",
       "expected_output": "Runs scripts/a2a_call.py with --target and --private-key-env. Describes: ENS url record via CCIP-Read, fetch and VERIFY /.well-known/6022, read the A2A url from the agent card's supportedInterfaces (not from the 6022 endpoints object), SendMessage, on 402 decode PAYMENT-REQUIRED, sign, retry with PAYMENT-SIGNATURE. Does not hand-build EIP-712.",
       "files": [],
       "assertions": [

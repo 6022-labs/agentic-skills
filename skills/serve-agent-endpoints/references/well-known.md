@@ -12,7 +12,7 @@ routed by `gateway_mvc/core/well_known_controller.go`.
   "protocol": "6022",
   "protocolVersion": "0.1",
   "name": "hermes",
-  "ensDomain": "hermes.agents6022.eth",
+  "ensDomain": "hermes.agents.80002.6022.eth",
   "endpoints": {
     "responses": "https://agent.example.com/api/responses",
     "chatCompletions": "https://agent.example.com/api/chat/completions"
@@ -65,7 +65,7 @@ Both discovery documents use the identical procedure, implemented once in
    form of the example above:
 
    ```json
-   {"endpoints":{"responses":"https://agent.example.com/api/responses"},"ensDomain":"hermes.agents6022.eth","name":"hermes","paymentMethods":["x402"],"protocol":"6022","protocolVersion":"0.1"}
+   {"endpoints":{"chatCompletions":"https://agent.example.com/api/chat/completions","responses":"https://agent.example.com/api/responses"},"ensDomain":"hermes.agents.80002.6022.eth","name":"hermes","paymentMethods":["x402"],"protocol":"6022","protocolVersion":"0.1"}
    ```
 
 2. **Build the protected header.** Its fields are declared alphabetically so the

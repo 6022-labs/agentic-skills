@@ -13,7 +13,7 @@ Prints one JSON report. Exit codes:
     1  the script could not run (bad arguments, missing key)
 
 Usage:
-    python a2a_call.py --target hermes.agents6022.eth --message "hello"
+    python a2a_call.py --target hermes.agents.80002.6022.eth --message "hello"
     python a2a_call.py --target https://agent.example.com --message "hello" \\
                        --private-key-env AGENT_PRIVATE_KEY
 """
@@ -108,21 +108,11 @@ def fetch_json(url, timeout):
         return None, f"not valid JSON: {exc}"
 
 
-def verify_card_signature(document):
-    """Detached ES256K JWS over the JCS-canonicalized document, signatures excluded.
-
-    Verifying is what stops you paying an impostor parked at a hijacked origin,
-    so a card that will not verify is a hard stop, not a warning.
-    """
-    signatures = document.get("signatures")
-    if not signatures:
-        return False, "document carries no signatures[]", None
-
-    payload = {k: v for k, v in document.items() if k != "signatures"}
-    entry = signatures[0]
+def verify_one_signature(entry, canonical):
+    """Verify a single detached ES256K JWS entry. Returns (ok, detail, signer)."""
     protected, signature = entry.get("protected"), entry.get("signature")
     if not protected or not signature:
-        return False, "signature entry missing protected/signature", None
+        return False, "entry missing protected/signature", None
 
     try:
         header = json.loads(b64url_decode(protected))
@@ -140,7 +130,7 @@ def verify_card_signature(document):
     if len(pubkey_bytes) != 64 or address_from_public_key(pubkey_bytes).lower() != (kid or "").lower():
         return False, "jwk does not derive the kid it claims", kid
 
-    signing_input = protected.encode("ascii") + b"." + b64url_encode(jcs_canonicalize(payload)).encode("ascii")
+    signing_input = protected.encode("ascii") + b"." + b64url_encode(canonical).encode("ascii")
     digest = hashlib.sha256(signing_input).digest()
     raw_signature = b64url_decode(signature)
     if len(raw_signature) != 64:
@@ -157,22 +147,84 @@ def verify_card_signature(document):
     return False, f"signature does not recover to kid {kid}", kid
 
 
+def verify_card_signature(document, expected_address=None):
+    """Detached ES256K JWS over the JCS-canonicalized document, signatures excluded.
+
+    Every entry in `signatures[]` is tried: a node may publish several during a
+    key rotation, and reading only the first would reject a valid document.
+
+    `expected_address` is the agent's registered `evm` address. Without it this
+    only proves the document is internally consistent — anyone can self-sign a
+    card claiming any name — which is not enough before sending a payment.
+    """
+    signatures = document.get("signatures")
+    if not signatures or not isinstance(signatures, list):
+        return False, "document carries no signatures[]", None
+
+    payload = {k: v for k, v in document.items() if k != "signatures"}
+    canonical = jcs_canonicalize(payload)
+
+    failures = []
+    for index, entry in enumerate(signatures):
+        if not isinstance(entry, dict):
+            failures.append(f"[{index}] not an object")
+            continue
+        ok, detail, signer = verify_one_signature(entry, canonical)
+        if not ok:
+            failures.append(f"[{index}] {detail}")
+            continue
+        if expected_address and signer.lower() != expected_address.lower():
+            failures.append(f"[{index}] signed by {signer}, not the registered {expected_address}")
+            continue
+        return True, f"valid ES256K/JCS signature by {signer}", signer
+
+    return False, "; ".join(failures), None
+
+
+def as_origin(url):
+    """Return (origin, error). Only a bare origin is usable.
+
+    The well-known paths are appended to this, so a target carrying a path would
+    silently become `https://host/api/a2a/.well-known/6022` and be reported as a
+    discovery failure that looks like the peer's fault.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None, f"{url!r} is not an http(s) URL"
+    if parsed.path.strip("/") or parsed.query or parsed.fragment:
+        return None, (f"target must be an origin with no path, query or fragment — "
+                      f"did you mean {parsed.scheme}://{parsed.netloc} ?")
+    return f"{parsed.scheme}://{parsed.netloc}", None
+
+
 def resolve_target(target, eth_rpc, timeout):
-    """Return (origin, ens_domain, error). A URL target skips ENS entirely."""
+    """Return (origin, ens_domain, agent_address, error).
+
+    An ENS target also yields the agent's registered `evm` address via addr(),
+    which is the anchor every signature below is checked against. A URL target
+    has no anchor: identity cannot be established, only document integrity.
+    """
     if target.startswith(("http://", "https://")):
-        return target.rstrip("/"), None, None
+        origin, error = as_origin(target)
+        return origin, None, None, error
+
     try:
         from web3 import Web3
     except ImportError:
-        return None, None, "web3 is required to resolve an ENS name; pass a URL instead"
+        return None, None, None, "web3 is required to resolve an ENS name; pass a URL instead"
     try:
         w3 = Web3(Web3.HTTPProvider(eth_rpc, request_kwargs={"timeout": timeout}))
         url = w3.ens.get_text(target, "url")
+        agent_address = w3.ens.address(target)
     except Exception as exc:  # noqa: BLE001 - any resolver failure is one outcome
-        return None, None, f"ENS resolution failed: {exc}"
+        return None, None, None, f"ENS resolution failed: {exc}"
     if not url:
-        return None, None, f"{target} has no url text record"
-    return url.rstrip("/"), target, None
+        return None, None, None, f"{target} has no url text record"
+
+    origin, error = as_origin(url)
+    if error:
+        return None, None, None, f"{target} url record is unusable: {error}"
+    return origin, target, agent_address, None
 
 
 def a2a_url_from_card(card):
@@ -308,8 +360,12 @@ def sign_permit2(account, option, chain_id, amount):
             "permit2Authorization": authorization}
 
 
-def sign_challenge(account, challenge, amount_override):
-    """Sign the first supported option in accepts[]. Returns (header, option, error)."""
+def sign_challenge(account, challenge):
+    """Sign the first supported option in accepts[]. Returns (header, option, error).
+
+    The amount signed is always the challenge's own: the callee accepts anything
+    at or above its price, so a caller-supplied amount can only ever overpay.
+    """
     if challenge.get("x402Version") != X402_VERSION:
         return None, None, f"unsupported x402 version {challenge.get('x402Version')}"
 
@@ -317,7 +373,7 @@ def sign_challenge(account, challenge, amount_override):
         if not is_supported(option):
             continue
         chain_id = parse_caip2(option["network"])
-        amount = amount_override if amount_override is not None else option.get("amount", "0")
+        amount = option.get("amount", "0")
         method = extra_string(option, "assetTransferMethod")
         if method == METHOD_EIP3009:
             evm_payload = sign_eip3009(account, option, chain_id, amount)
@@ -393,11 +449,26 @@ def send_message(url, message, timeout, payment_header=None):
 
 
 def reply_text(response):
+    """The reply's text, or None if the peer's shape is unusable.
+
+    Parts may legally be absent, but a peer can also return strings where
+    objects belong; calling .get() on those would raise and escape the JSON
+    report this script promises.
+    """
     try:
         parts = response.json()["result"]["message"]["parts"]
     except (ValueError, KeyError, TypeError):
         return None
-    return "".join(part.get("text", "") for part in parts)
+    if not isinstance(parts, list):
+        return None
+    collected = []
+    for part in parts:
+        if not isinstance(part, dict):
+            return None
+        text = part.get("text")
+        if isinstance(text, str):
+            collected.append(text)
+    return "".join(collected)
 
 
 def load_account(args):
@@ -429,13 +500,15 @@ def main():
     parser.add_argument("--message", required=True, help="Text of the turn to send")
     parser.add_argument("--private-key-env", help="Env var holding the payer's private key")
     parser.add_argument("--wallet-file", help="Wallet JSON holding the payer's private key")
-    parser.add_argument("--amount", help="Override the amount to sign for (atomic units)")
     parser.add_argument("--eth-rpc", default="https://ethereum-rpc.publicnode.com",
                         help="Ethereum RPC used for CCIP-Read ENS resolution")
     parser.add_argument("--cache-file", default=str(DEFAULT_CACHE), help="Challenge cache path")
     parser.add_argument("--no-cache", action="store_true", help="Do not read or write the challenge cache")
     parser.add_argument("--skip-verify", action="store_true",
-                        help="Do not verify the peer's card signature (you are then trusting the origin)")
+                        help="Do not verify the peer's card signatures (you are then trusting the origin)")
+    parser.add_argument("--trust-origin", action="store_true",
+                        help="Allow paying a peer whose identity could not be anchored on-chain "
+                             "(a URL target, or a name with no addr() record)")
     parser.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout in seconds")
     args = parser.parse_args()
 
@@ -447,17 +520,20 @@ def main():
     report = {"target": args.target}
 
     # 1. resolve --------------------------------------------------------
-    origin, ens_domain, error = resolve_target(args.target, args.eth_rpc, args.timeout)
+    origin, ens_domain, agent_address, error = resolve_target(args.target, args.eth_rpc, args.timeout)
     if error:
         return fail("resolve", error)
     report["origin"] = origin
+    report["identity_anchored"] = agent_address is not None
+    if agent_address:
+        report["agent_address"] = agent_address
 
     # 2. fetch + verify the 6022 card -----------------------------------
     card_6022, error = fetch_json(origin + "/.well-known/6022", args.timeout)
     if error:
         return fail("discovery", f"GET /.well-known/6022: {error}", origin=origin)
     if not args.skip_verify:
-        ok, detail, signer = verify_card_signature(card_6022)
+        ok, detail, signer = verify_card_signature(card_6022, agent_address)
         report["card_signer"] = signer
         if not ok:
             return fail("verify", f"peer's /.well-known/6022 did not verify: {detail}", origin=origin)
@@ -465,9 +541,20 @@ def main():
     report["payment_methods"] = card_6022.get("paymentMethods") or []
 
     # 3. find the A2A endpoint ------------------------------------------
+    # The card is verified before its URL is read: that URL is where the turn and
+    # its payment go, so an unverified card can redirect both to a third party.
     agent_card, error = fetch_json(origin + "/.well-known/agent-card.json", args.timeout)
     if error:
         return fail("discovery", f"GET /.well-known/agent-card.json: {error}", origin=origin)
+    if not args.skip_verify:
+        ok, detail, card_signer = verify_card_signature(agent_card, agent_address)
+        if not ok:
+            return fail("verify", f"peer's agent card did not verify: {detail}", origin=origin)
+        if signer and card_signer and card_signer.lower() != signer.lower():
+            return fail("verify",
+                        f"agent card is signed by {card_signer} but /.well-known/6022 by {signer}; "
+                        "the two documents do not belong to the same identity",
+                        origin=origin)
     a2a_url = a2a_url_from_card(agent_card)
     if not a2a_url:
         return fail("discovery", "agent card advertises no JSONRPC interface", origin=origin)
@@ -479,7 +566,7 @@ def main():
     # 4. send, pre-signing from cache when we have terms already ---------
     presigned_header = None
     if cached and account:
-        presigned_header, _, sign_error = sign_challenge(account, cached, args.amount)
+        presigned_header, _, sign_error = sign_challenge(account, cached)
         report["presigned"] = sign_error is None
     response, error = send_message(a2a_url, args.message, args.timeout, presigned_header)
     if error:
@@ -491,6 +578,16 @@ def main():
             return fail("payment",
                         "peer requires payment (402) but no wallet key was provided; "
                         "pass --private-key-env or --wallet-file",
+                        a2a_url=a2a_url)
+
+        # Paying is the point of no return, so it is the one step that insists on
+        # a chain anchor: without it the signatures prove only that the documents
+        # are self-consistent, which an impostor's are too.
+        if agent_address is None and not (args.skip_verify or args.trust_origin):
+            return fail("payment",
+                        "refusing to pay a peer whose identity is not anchored on-chain — "
+                        "call it by its ENS name so addr() can be resolved, or pass "
+                        "--trust-origin to accept the risk deliberately",
                         a2a_url=a2a_url)
 
         challenge, error = decode_challenge_header(response.headers.get(PAYMENT_REQUIRED_HEADER, ""))
@@ -509,14 +606,14 @@ def main():
         if not args.no_cache:
             store_cache(args.cache_file, cache_key, challenge)
 
-        payment_header, option, error = sign_challenge(account, challenge, args.amount)
+        payment_header, option, error = sign_challenge(account, challenge)
         if error:
             return fail("payment", error, a2a_url=a2a_url, challenge=challenge)
         report["paid"] = {
             "network": option["network"],
             "asset": option["asset"],
             "payTo": option["payTo"],
-            "amount": args.amount if args.amount is not None else option.get("amount", "0"),
+            "amount": option.get("amount", "0"),
             "assetTransferMethod": extra_string(option, "assetTransferMethod"),
             "payer": account.address,
         }

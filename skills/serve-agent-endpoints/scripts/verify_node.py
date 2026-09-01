@@ -13,7 +13,7 @@ means you learned nothing about the node.
 Usage:
     python verify_node.py --origin https://agent.example.com
     python verify_node.py --origin https://agent.example.com \\
-                          --ens-domain hermes.agents6022.eth \\
+                          --ens-domain hermes.agents.80002.6022.eth \\
                           --eth-rpc https://ethereum-rpc.publicnode.com
 """
 
@@ -59,12 +59,14 @@ class Report:
     def skipped(self):
         return [c for c in self.checks if c["status"] == SKIP]
 
-    def emit(self, origin, ens_checked):
+    def emit(self, origin, identity_anchored):
         live = not self.failed() and not self.skipped()
         print(json.dumps({
             "origin": origin,
             "live": live,
-            "ens_checked": ens_checked,
+            # False means the signatures were only checked for self-consistency:
+            # they prove the documents were not altered, not who published them.
+            "identity_anchored": identity_anchored,
             "checks": self.checks,
             "failed": [c["check"] for c in self.failed()],
             "skipped": [c["check"] for c in self.skipped()],
@@ -123,27 +125,15 @@ def fetch_document(url, timeout):
         return raw, None, f"not valid JSON: {exc}"
 
 
-def verify_signature(document):
-    """Verify a detached ES256K JWS over the JCS-canonicalized document.
-
-    Returns (ok, detail, signer_address). The signed bytes exclude `signatures`,
-    which is why it is popped from a copy before canonicalization.
-    """
+def verify_one_signature(entry, canonical):
+    """Verify a single detached ES256K JWS entry. Returns (ok, detail, signer)."""
     from eth_keys import KeyAPI
     from eth_keys.exceptions import BadSignature
 
-    signatures = document.get("signatures")
-    if not signatures:
-        return False, "document carries no signatures[]", None
-
-    payload = {k: v for k, v in document.items() if k != "signatures"}
-    canonical = jcs_canonicalize(payload)
-
-    entry = signatures[0]
     protected = entry.get("protected")
     signature = entry.get("signature")
     if not protected or not signature:
-        return False, "signature entry missing protected/signature", None
+        return False, "entry missing protected/signature", None
 
     try:
         header = json.loads(b64url_decode(protected))
@@ -161,7 +151,7 @@ def verify_signature(document):
     try:
         pubkey_bytes = b64url_decode(jwk["x"]) + b64url_decode(jwk["y"])
     except (KeyError, ValueError) as exc:
-        return False, f"protected header jwk is unusable: {exc}", None
+        return False, f"protected header jwk is unusable: {exc}", kid
     if len(pubkey_bytes) != 64:
         return False, "jwk x||y is not 64 bytes", kid
 
@@ -191,6 +181,47 @@ def verify_signature(document):
             return True, f"valid ES256K/JCS signature by {kid}", kid
 
     return False, f"signature does not recover to kid {kid}", kid
+
+
+def verify_signature(document, expected_address=None):
+    """Verify a document's detached ES256K JWS over its JCS-canonicalized body.
+
+    Returns (ok, detail, signer_address). The signed bytes exclude `signatures`,
+    which is why it is dropped from a copy before canonicalization.
+
+    Every entry in `signatures[]` is tried, not just the first: a node may
+    publish several during a key rotation, and rejecting a document because its
+    stale key happens to be listed first would take a healthy agent offline.
+
+    `expected_address` is what makes this mean anything. Without it the check is
+    self-consistency only — any key can sign a card claiming any name — so it
+    proves the document was not tampered with in transit, not who published it.
+    """
+    signatures = document.get("signatures")
+    if not signatures:
+        return False, "document carries no signatures[]", None
+    if not isinstance(signatures, list):
+        return False, "signatures is not a list", None
+
+    payload = {k: v for k, v in document.items() if k != "signatures"}
+    canonical = jcs_canonicalize(payload)
+
+    failures = []
+    for index, entry in enumerate(signatures):
+        if not isinstance(entry, dict):
+            failures.append(f"[{index}] not an object")
+            continue
+        ok, detail, signer = verify_one_signature(entry, canonical)
+        if not ok:
+            failures.append(f"[{index}] {detail}")
+            continue
+        if expected_address and signer.lower() != expected_address.lower():
+            failures.append(f"[{index}] signed by {signer}, not the registered {expected_address}")
+            continue
+        anchored = " (matches the address registered on-chain)" if expected_address else ""
+        return True, f"valid ES256K/JCS signature by {signer}{anchored}", signer
+
+    return False, "; ".join(failures), None
 
 
 def a2a_url_from_card(card):
@@ -240,37 +271,95 @@ def send_message(url, nonce, timeout, payment_header=None):
     except (ValueError, KeyError, TypeError) as exc:
         return 200, None, f"200 with unreadable A2A result: {exc}"
 
-    return 200, "".join(part.get("text", "") for part in parts), None
+    text = join_parts(parts)
+    if text is None:
+        return 200, None, "200 with unreadable A2A result: parts is not a list of objects"
+    return 200, text, None
 
 
-def resolve_ens_url(ens_domain, eth_rpc, timeout):
-    """Resolve the agent's `url` text record. Returns (value, error).
+def join_parts(parts):
+    """Concatenate the text of every part, or None if the shape is wrong.
 
-    Resolution is CCIP-Read (ERC-3668): the L1 resolver reverts with
-    OffchainLookup and the client follows it to the 6022 ENS gateway, which reads
-    the record from AgentEnsRegistry on the registry chain.
+    A peer can return syntactically valid JSON whose parts are strings rather
+    than objects; calling .get() on those raises and would escape the JSON
+    report and exit-code contract this script promises.
     """
+    if not isinstance(parts, list):
+        return None
+    collected = []
+    for part in parts:
+        if not isinstance(part, dict):
+            return None
+        text = part.get("text")
+        if isinstance(text, str):
+            collected.append(text)
+    return "".join(collected)
+
+
+def ens_resolver(eth_rpc, timeout):
+    """Return (web3, error). Resolution is CCIP-Read (ERC-3668): the L1 resolver
+    reverts with OffchainLookup and the client follows it to the 6022 ENS
+    gateway, which reads from AgentEnsRegistry on the registry chain."""
     try:
         from web3 import Web3
     except ImportError:
         return None, "web3 is not installed; pip install -r scripts/requirements.txt"
+    return Web3(Web3.HTTPProvider(eth_rpc, request_kwargs={"timeout": timeout})), None
 
+
+def resolve_ens_url(ens_domain, eth_rpc, timeout):
+    """Resolve the agent's `url` text record. Returns (value, error)."""
+    w3, error = ens_resolver(eth_rpc, timeout)
+    if error:
+        return None, error
     try:
-        w3 = Web3(Web3.HTTPProvider(eth_rpc, request_kwargs={"timeout": timeout}))
         return w3.ens.get_text(ens_domain, "url"), None
     except Exception as exc:  # noqa: BLE001 - any resolver failure is one outcome here
         return None, f"ENS resolution failed: {exc}"
+
+
+def resolve_ens_address(ens_domain, eth_rpc, timeout):
+    """Resolve the agent's registered `evm` address via ENS addr(). Returns
+    (address, error).
+
+    This is the anchor for every signature check: a document is only proof of
+    identity if its signer is the address the name resolves to. Without it a
+    stranger can self-sign a card for any agent's name and pass verification.
+    """
+    w3, error = ens_resolver(eth_rpc, timeout)
+    if error:
+        return None, error
+    try:
+        address = w3.ens.address(ens_domain)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"ENS addr() resolution failed: {exc}"
+    if not address:
+        return None, f"{ens_domain} has no addr() record to anchor signatures against"
+    return address, None
 
 
 def normalize_origin(url):
     return url.rstrip("/")
 
 
+# Ports that are implied by the scheme, so an explicit one means the same origin.
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def same_origin(a, b):
+    """Compare origins by scheme, host and effective port.
+
+    Case and an explicitly written default port are cosmetic, so comparing raw
+    netlocs reports a healthy node as misconfigured.
+    """
     from urllib.parse import urlparse
 
-    pa, pb = urlparse(a), urlparse(b)
-    return (pa.scheme, pa.netloc) == (pb.scheme, pb.netloc)
+    def parts(url):
+        parsed = urlparse(url)
+        scheme = (parsed.scheme or "").lower()
+        return scheme, (parsed.hostname or "").lower(), parsed.port or DEFAULT_PORTS.get(scheme)
+
+    return parts(a) == parts(b)
 
 
 def main():
@@ -280,7 +369,7 @@ def main():
     parser.add_argument("--origin", required=True,
                         help="Public origin of the node, e.g. https://agent.example.com")
     parser.add_argument("--ens-domain",
-                        help="ENS name to cross-check against the origin, e.g. hermes.agents6022.eth")
+                        help="ENS name to cross-check against the origin, e.g. hermes.agents.80002.6022.eth")
     parser.add_argument("--eth-rpc", default="https://ethereum-rpc.publicnode.com",
                         help="Ethereum RPC used for CCIP-Read ENS resolution")
     parser.add_argument("--timeout", type=float, default=30.0, help="Per-request timeout in seconds")
@@ -297,6 +386,18 @@ def main():
 
     report = Report()
 
+    # --- the anchor -------------------------------------------------------
+    # Resolved first: every signature below is checked against it, so without it
+    # the signature checks prove integrity but say nothing about identity.
+    expected_address = None
+    if args.ens_domain:
+        expected_address, error = resolve_ens_address(args.ens_domain, args.eth_rpc, args.timeout)
+        if error:
+            report.add("identity_anchor", SKIP, error)
+        else:
+            report.add("identity_anchor", PASS,
+                       f"{args.ens_domain} addr() -> {expected_address}; signatures must match it")
+
     # --- the 6022 discovery document -------------------------------------
     signer_6022 = None
     raw_6022, doc_6022, error = fetch_document(origin + WELL_KNOWN_6022, args.timeout)
@@ -306,11 +407,13 @@ def main():
     else:
         report.add("well_known_6022_reachable", PASS,
                    f"served {len(raw_6022)} bytes of JSON")
-        ok, detail, signer_6022 = verify_signature(doc_6022)
+        ok, detail, signer_6022 = verify_signature(doc_6022, expected_address)
         report.add("well_known_6022_signature", PASS if ok else FAIL, detail,
                    signer=signer_6022)
 
     # --- the A2A agent card ----------------------------------------------
+    # Verified before its URL is used: that URL is where callers send A2A traffic
+    # and payment, so an unverified card can redirect both.
     signer_card = None
     raw_card, card, error = fetch_document(origin + WELL_KNOWN_CARD, args.timeout)
     if card is None:
@@ -318,8 +421,10 @@ def main():
                    f"GET {WELL_KNOWN_CARD} did not return a JSON document: {error}")
     else:
         report.add("agent_card_reachable", PASS, f"served {len(raw_card)} bytes of JSON")
-        ok, detail, signer_card = verify_signature(card)
+        ok, detail, signer_card = verify_signature(card, expected_address)
         report.add("agent_card_signature", PASS if ok else FAIL, detail, signer=signer_card)
+        if not ok:
+            card = None
 
     # Both documents bind to the same on-chain identity, so one signer.
     if signer_6022 and signer_card:
@@ -353,12 +458,16 @@ def main():
                        "call-agent-a2a skill to pay and verify")
         elif status != 200:
             report.add("a2a_live", FAIL, f"SendMessage returned HTTP {status}")
-        elif reply is not None and nonce in reply:
-            report.add("a2a_live", PASS, "SendMessage echoed the nonce: a real runtime answered")
+        elif reply is not None and reply.strip() == nonce:
+            report.add("a2a_live", PASS, "SendMessage returned the nonce exactly: a real runtime answered")
         else:
+            # Exact match, not containment: the prompt itself contains the nonce,
+            # so a gate that merely reflects the request would pass a substring
+            # check while no runtime ever ran. The reply is reported so a human
+            # can tell a reflecting gate from a merely chatty agent.
             report.add("a2a_live", FAIL,
-                       "200 but the nonce did not come back — a canned reply or a gate "
-                       "answering instead of the runtime",
+                       "200 but the reply was not exactly the nonce — a canned or reflected "
+                       "response, or an agent that did not follow the instruction",
                        nonce=nonce, reply=(reply or "")[:200])
 
     # --- ENS points at this origin ---------------------------------------
@@ -381,7 +490,7 @@ def main():
                        f"{args.ens_domain} url -> {resolved}, which is not {origin}; "
                        "callers will route to the wrong host")
 
-    return report.emit(origin, bool(args.ens_domain))
+    return report.emit(origin, expected_address is not None)
 
 
 if __name__ == "__main__":

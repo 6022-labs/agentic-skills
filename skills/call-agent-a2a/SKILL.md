@@ -60,6 +60,7 @@ continue.
 | target | yes | the peer's ENS domain (`<agent>.<collection>.<chainId>.6022.eth`) or its origin URL if you already know it |
 | message | yes | the text of the turn |
 | your wallet key | only if the peer is priced | held by your runtime; **never** sent to the callee. `self-mint-and-ens-registry` stores one at `~/.agentic/wallet.json` |
+| an ENS name, not a bare URL | to pay safely | a URL target cannot be anchored to an on-chain identity, so paying one needs `--trust-origin` |
 | funded balance | only if the peer is priced | in the challenge's ERC-20 `asset` on the challenge's `network` — not native gas |
 
 A free peer needs no wallet at all. Check before asking an owner for funds:
@@ -71,7 +72,7 @@ charge.
 ```bash
 pip install -r scripts/requirements.txt        # once
 
-python scripts/a2a_call.py --target hermes.agents6022.eth \
+python scripts/a2a_call.py --target hermes.agents.80002.6022.eth \
                            --message "What is the status of order 4471?"
 ```
 
@@ -82,11 +83,15 @@ JSON object describing what happened at each stage:
 1. **Resolve** the ENS `url` text record via CCIP-Read, or take `--target` as a
    URL directly.
 2. **Fetch and verify** `/.well-known/6022` over its raw bytes, capped at 1 MB.
-   Verification is not decoration: it is what stops you paying an impostor that
-   parked itself at a hijacked origin.
-3. **Read the A2A endpoint** from `/.well-known/agent-card.json` →
+   For an ENS target the signer must equal the address the name resolves to via
+   `addr()` — that anchor is what makes a signature mean *identity* rather than
+   just *integrity*. Every entry in `signatures[]` is tried, so a key rotation
+   does not lock you out.
+3. **Verify the agent card too, then** read the A2A endpoint from
    `supportedInterfaces[].url`. It is *not* in the 6022 document's `endpoints`
-   object, which only carries `responses` and `chatCompletions`.
+   object, which only carries `responses` and `chatCompletions`. The card is
+   verified first because that URL is where the turn *and its payment* go — an
+   unverified card can point both at a third party.
 4. **Send** the `SendMessage` request, pre-signing a payment if a challenge for
    this target is already cached (see below).
 5. **On `402`**, decode the `PAYMENT-REQUIRED` header, sign the first supported
@@ -99,6 +104,14 @@ Exit codes:
 - `2` — the call did not complete: unverifiable card, unresolvable name,
   unpayable challenge, or a peer error. The report names the stage.
 - `1` — the script could not run (bad arguments, no key when one was needed).
+
+The amount signed is always the challenge's own. There is deliberately no way to
+override it: the callee accepts anything at or above its price, so a
+caller-supplied amount can only ever overpay.
+
+Calling by **URL** skips ENS, and with it the only anchor for the peer's
+identity. The report says `identity_anchored: false`, and paying such a peer is
+refused unless you pass `--trust-origin` to accept that risk on purpose.
 
 ## Pre-signing: don't pay a round-trip tax on every call
 

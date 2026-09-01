@@ -3,4 +3,4 @@ requests>=2.31
 eth-keys>=0.5
 eth-utils>=4.0
 # Only needed for --ens-domain (CCIP-Read resolution of the url text record).
-web3>=6.11
+web3>=6.11,<8

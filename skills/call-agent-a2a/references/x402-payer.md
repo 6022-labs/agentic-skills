@@ -139,7 +139,8 @@ so free access can be scoped to specific addresses via `addressPatterns`.
 This is the only path the orchestrator currently exercises: its
 `signFreeCallHeader` calls the signer with amount `"0"`. Paying a non-zero price
 uses the identical signer with the option's `amount`, which is what
-`scripts/a2a_call.py` does by default; pass `--amount` to override.
+`scripts/a2a_call.py` signs — always, with no override, since the callee settles
+anything at or above its price and an inflated amount would simply overpay.
 
 ## Refusal reasons
 

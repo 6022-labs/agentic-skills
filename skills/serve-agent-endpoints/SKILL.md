@@ -164,7 +164,7 @@ python scripts/verify_node.py --origin https://agent.example.com
 
 # Phase 2 — after publishing ENS: does discovery actually land here?
 python scripts/verify_node.py --origin https://agent.example.com \
-                              --ens-domain hermes.agents6022.eth
+                              --ens-domain hermes.agents.80002.6022.eth
 ```
 
 Prints one JSON report with a PASS/FAIL per check: documents reachable, JCS+
@@ -172,6 +172,11 @@ ES256K signature recovering the `kid` its own JWK derives, both documents signed
 by the same key, an A2A endpoint advertised, a real `SendMessage` round-trip
 carrying a nonce back, and — in phase 2 — the ENS `url` record resolving to the
 origin that just passed.
+
+With `--ens-domain` the verifier also resolves the name's `addr()` record first
+and requires **both** documents to be signed by that address. Without it, the
+signature checks prove the documents were not altered but not who published them,
+and the report says so with `identity_anchored: false`.
 
 The two phases exist because the ordering is not optional: you cannot honestly
 point ENS at an origin you have not verified, and you cannot verify ENS before
@@ -187,7 +192,8 @@ Exit codes are the contract:
 - `1` — the verifier could not run at all (bad arguments). You learned nothing
   about the node; fix the invocation.
 
-The A2A check sends a random nonce and requires it back. That is deliberate: a
+The A2A check sends a random nonce and requires the reply to be **exactly** that
+nonce. That is deliberate: a
 status code proves a route exists, but only the echoed nonce distinguishes a real
 runtime from a gate returning a fixed string — the failure mode that has caught
 the most integrations. Pass `--no-send-message` only when the node is priced and
