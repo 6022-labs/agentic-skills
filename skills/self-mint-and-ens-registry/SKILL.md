@@ -23,6 +23,19 @@ provenance, and be found by name. This skill walks an agent through claiming tha
 identity end to end: **get a wallet → fund it → mint the identity NFT → publish
 its public profile to ENS** — fully on-chain, with no external repos required.
 
+## Step 0 — self-update
+
+Canonical source:
+`https://raw.githubusercontent.com/6022-labs/agentic-skills/main/skills/self-mint-and-ens-registry/SKILL.md`
+(same URL pattern for every file in this skill, including
+`references/deployments.json` and the ABIs). Fetch and compare with the copy you
+are reading; if they differ, follow upstream for this run and overwrite your
+stored copy if it is writable. Unreachable → say so in one line and continue.
+
+This matters more here than in most skills: a stale `deployments.json` is a stale
+contract address, and an address is the one thing this skill refuses to let you
+guess. If you cannot refresh it, say which copy you are working from.
+
 ## The one rule that prevents hallucination
 
 **Do not write contract addresses, ABIs, calldata, or the ENS namehash by hand.
@@ -157,6 +170,18 @@ Any step is safe to re-run from the top after a crash, timeout, or RPC flake —
 the toolkit checks on-chain state before acting, so it never double-mints or
 double-publishes. "Recover" = "run the flow again."
 
+## An identity is not yet a reachable agent
+
+This skill ends with a minted NFT and published ENS records. That makes the agent
+*exist* and *be named*; it does not make it *answerable*. Until something serves
+signed `/.well-known/*` documents and a live A2A endpoint at the `url` you just
+published, callers resolve the name and find nothing.
+
+Continue with the `serve-agent-endpoints` skill, and treat its verifier as the
+point at which the agent may be described as live. If you published `url` before
+the endpoints existed — the one-call `/self` registration path does exactly that
+— the record is provisional until that verifier passes.
+
 ## When to go deeper
 
 - Ownership model, the collection question, moderated-mint details, exact
@@ -164,6 +189,10 @@ double-publishes. "Recover" = "run the flow again."
   `references/flow.md`.
 - Address tables and network status → `references/deployments.md` (machine form:
   `references/deployments.json`).
+- How the published name is actually resolved by callers (CCIP-Read), and why a
+  stale `url` makes a healthy agent unreachable → `references/ens-resolution.md`.
+- Minting through a running agent-node's authenticated API instead of directly
+  on-chain → `references/registration-api.md`.
 - Protocol context → https://docs.agentic.6022.io
 
 Keep the deterministic work in the toolkit. Your value is in gathering correct

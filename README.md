@@ -10,9 +10,22 @@ Each directory under `skills/` is a self-contained skill (`SKILL.md` + bundled s
 |-------|--------------|
 | [`mount-agent-node`](./skills/mount-agent-node) | Mount a new agent-node onto existing shared infra (DB server, Vault, Kubo, Grafana). Host-agnostic workflow, Railway today. |
 | [`self-mint-and-ens-registry`](./skills/self-mint-and-ens-registry) | Create an agent's 6022 identity: wallet, gas request, identity NFT mint, ENS profile — verified addresses and ABIs bundled. |
-| [`6022-agent-identity`](./skills/6022-agent-identity) | Make an external agent a verified 6022 node: identity, signed discovery, x402, A2A receiving, and operational self-check. |
-| [`6022-a2a-initiate`](./skills/6022-a2a-initiate) | Proactively discover and call another 6022 agent over A2A, paying x402 as the caller. |
-| [`6022-agent-swarm-orchestration`](./skills/6022-agent-swarm-orchestration) | Trigger and manage multi-agent conversations using the conversation broker, bridge callbacks, and daemon. |
+| [`serve-agent-endpoints`](./skills/serve-agent-endpoints) | Make a runtime reachable, discoverable and optionally paid: signed `/.well-known/*` documents, a live `POST /a2a`, and the x402 rules gating them. Ships a verifier that proves it, rather than assuming it. |
+| [`call-agent-a2a`](./skills/call-agent-a2a) | Call another agent and pay its x402 challenge as the caller — ENS discovery, card verification, EIP-3009/Permit2 signing. |
+| [`facilitate-agent-conversation`](./skills/facilitate-agent-conversation) | Take part in a conversation shared with other agents: decide who to consult, pay peers from your own wallet, bind a memory session, close the thread. |
+
+**Skills belong to the agent.** Every skill here is something an agent does for
+itself — claim an identity, serve its endpoints, price its access, call and pay a
+peer, hold up its end of a conversation — plus `mount-*` skills for standing up
+the infrastructure it runs on. Operating a shared service (running a conversation
+broker, wiring a channel, attaching participants on someone's behalf) is not an
+agent skill; that belongs in the docs at https://docs.agentic.6022.io.
+
+Each skill states its own boundaries: identity lives in
+`self-mint-and-ens-registry`, the whole inbound surface in
+`serve-agent-endpoints`, the payer side in `call-agent-a2a`. Where a skill
+bundles a script, the script is the deterministic path — the prose explains what
+it did, not how to reimplement it.
 
 ## Install
 
@@ -31,7 +44,21 @@ If a skill bundles `scripts/requirements.txt`, `pip install -r` it once.
 
 ## Contributing
 
-Add a directory under `skills/` with a `SKILL.md` (frontmatter: `name`, `description`); deterministic logic in `scripts/`, docs in `references/`, verified data (addresses, ABIs) in bundled files — never hard-coded in prose. Add it to the table above and open a PR.
+Add a directory under `skills/` named for the **action it performs**
+(`mount-agent-node`, `call-agent-a2a`), not for a noun or a namespace. It needs:
+
+- `SKILL.md` — frontmatter (`name`, `description`, optionally `compatibility` and
+  `argument-hint`) and a body under ~200 lines. Open with a **step 0 self-update**
+  block pointing at the canonical `raw.githubusercontent.com` URL, so a copy
+  installed elsewhere can notice it is stale.
+- `scripts/` — anything deterministic. If a step can be gotten wrong silently
+  (a signature, an address, an EIP-712 domain), it belongs in a script with a
+  documented exit-code contract, not in prose.
+- `references/` — the detail the body links out to, one file per topic.
+- `evals/evals.json` — prompts plus objectively checkable assertions.
+- Verified data (addresses, ABIs) in bundled files, never inline in prose.
+
+Then add it to the table above and open a PR.
 
 ## License
 

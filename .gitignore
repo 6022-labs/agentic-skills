@@ -70,3 +70,6 @@ wallet.json
 
 # Personal Claude Code settings (not committed)
 .claude/settings.local.json
+
+### skill-creator eval workspaces (local scratch, may hold real credentials)
+*-workspace/

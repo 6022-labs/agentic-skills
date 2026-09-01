@@ -1,0 +1,92 @@
+{
+  "skill_name": "serve-agent-endpoints",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I'm wiring our external agent runtime (it's a Node service, already public at https://scout.example.com) into 6022. It's already minted \u2014 token 42 in collection 0xF897D5b759d225CD0505F77F101B7693cF861858 on Amoy. What exactly do I need to serve, and how do I sign it? Give me enough that I could implement the signer myself.",
+      "expected_output": "Names both /.well-known/6022 and /.well-known/agent-card.json, at the origin ROOT (not under /api), unauthenticated GET. Describes the detached ES256K JWS over the JCS-canonicalized body with signatures absent from the signed bytes, SHA-256 (not Keccak-256), r||s 64 bytes with the recovery byte dropped, kid = the evm address. Points at the pinned cross-repo test vector. Ends by directing to scripts/verify_node.py rather than declaring it done.",
+      "files": [],
+      "assertions": [
+        "Named both discovery documents: /.well-known/6022 AND /.well-known/agent-card.json",
+        "Stated the documents are served at the origin root, NOT under the /api public prefix, and are unauthenticated GET",
+        "Described signing as a detached ES256K JWS over the JCS (RFC 8785) canonicalized body",
+        "Stated the signatures field must be ABSENT from the bytes that are canonicalized and signed (sign, then attach)",
+        "Stated the digest is SHA-256, explicitly NOT Keccak-256 / personal_sign \u2014 the classic implementation error",
+        "Stated the wire signature is r||s (64 bytes), with go-ethereum's trailing recovery byte dropped",
+        "Stated kid in the protected header is the agent's evm address, and that verification means checking it against the on-chain registered address",
+        "Directed the user to run scripts/verify_node.py as the completion criterion rather than declaring the integration done from the steps alone",
+        "Did NOT claim the A2A endpoint URL is published in /.well-known/6022's endpoints object"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Our agent node is deployed and I can curl https://scout.example.com/.well-known/6022 and get JSON back. The ENS name scout.agents.80002.6022.eth points at it. Can I tell the team the agent is live?",
+      "expected_output": "Says no \u2014 a fetchable document proves neither a valid signature nor a working exchange. Runs/\u3010directs to\u3011 verify_node.py with --ens-domain, explains the nonce echo check catches canned replies from a gate, and explains exit 0 vs 2 (failed AND skipped both block 'live').",
+      "files": [],
+      "assertions": [
+        "Refused to call the node live on the basis of a 200 from the discovery document alone",
+        "Prescribed scripts/verify_node.py, passing --ens-domain since ENS is already published, as the actual arbiter",
+        "Explained that the A2A check sends a random nonce and requires it echoed back, because a status code cannot distinguish a live runtime from a gate returning a canned reply",
+        "Explained exit 0 = every applicable check passed, exit 2 = not proven live (a check FAILED or was SKIPPED), exit 1 = the verifier could not run",
+        "Mentioned that a skipped check (e.g. a priced node with no payment header) also blocks a 'live' verdict \u2014 an unverified check is not a passed one",
+        "Did not invent additional endpoints or checks that the skill does not define"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We integrated a partner's agent last week. Their /.well-known files are signed and verify fine, and POSTing to their A2A endpoint returns 200 with sensible-sounding text every time. But when our facilitator brings them into a conversation they never seem to actually engage with what was asked. What's going on?",
+      "expected_output": "Diagnoses the gate-answering-instead-of-the-runtime failure mode: a relay in front of a static origin returning canned or regex-matched replies. Prescribes the nonce loop-test (verify_node.py) as the discriminator, and states the rule that the gate authenticates and relays while the runtime produces content.",
+      "files": [],
+      "assertions": [
+        "Identified the canned-reply / gate-answering-instead-of-the-runtime failure mode as the likely cause",
+        "Explained why it survives ordinary checks: signatures verify and status codes are 200, so only content inspection catches it",
+        "Prescribed the nonce round-trip (scripts/verify_node.py, or an equivalent unique-token echo) as the discriminating test",
+        "Stated the rule that a gate in front of a static origin may authenticate and relay, but the runtime must produce the content",
+        "Did not recommend disabling payment gating or inventing a second endpoint as the fix"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want our agent node to charge 0.05 USDC per call on Polygon Amoy, paid to 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266. USDC on Amoy is 0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582 and it has 6 decimals. Give me the exact request.",
+      "expected_output": "POST /api/config/payment-policy/rules with price \"50000\" (atomic units) and a config carrying only network (eip155:80002), asset, payTo, addressPatterns. Explicitly does NOT set assetTransferMethod/eip712Name/eip712Version, explaining they are derived on-chain. Mentions the facilitator requirement for a paid rule.",
+      "files": [],
+      "assertions": [
+        "Used the route /config/payment-policy/rules (publicly /api/config/payment-policy/rules), authenticated \u2014 not an invented payment endpoint",
+        "Converted 0.05 USDC at 6 decimals to the atomic-unit string \"50000\", and stated price is a non-negative integer string in atomic units",
+        "Used CAIP-2 for the network: eip155:80002",
+        "Included addressPatterns in the config, noting at least one is required and \".*\" opens the rule to everyone",
+        "Did NOT set assetTransferMethod, eip712Name or eip712Version in the request",
+        "Explained those fields are detected on-chain from the asset when the rule is saved, and why an operator-supplied EIP-712 domain would silently break settlement",
+        "Mentioned that a non-zero-price rule requires a configured facilitator for that network",
+        "Mentioned the node must have an RPC configured for the rule's chain"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "We want our three partner agents to call us for free but charge everyone else. And we still want to know which partner is calling. How do we set that up?",
+      "expected_output": "Two rules: a zero-price rule with addressPatterns limited to the partner addresses, and a \".*\" rule at the real price. Explains cheapest-match-first evaluation, and that a zero-price rule still requires a signature \u2014 which is exactly what identifies the caller.",
+      "files": [],
+      "assertions": [
+        "Proposed two rules: a \"0\"-price rule scoped by addressPatterns to the partners, plus a broader \".*\" rule at the paid price",
+        "Explained rules are evaluated cheapest-matching-rule-first",
+        "Warned (or implied correctly) that a broad rule priced below a narrow one would make the narrow one unreachable",
+        "Explained a zero-price rule still makes the caller sign, and that the signature is what identifies the calling wallet \u2014 answering the 'know which partner' requirement",
+        "Stated addressPatterns are regexes matched against the caller's lowercase 0x address",
+        "Did not propose application-level or custom logic to implement the tiering when rules already express it"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I added a payment rule through the console but callers say they get a 402 with an empty accepts list. The rule is definitely saved \u2014 I can see it in the rules list. What's broken?",
+      "expected_output": "An empty accepts[] means no rule matched the caller \u2014 almost always addressPatterns narrower than intended. Prescribes checking the patterns against the caller's lowercase address, and verifying from the outside as a caller rather than from the operator's view of the config.",
+      "files": [],
+      "assertions": [
+        "Diagnosed empty accepts[] as no rule matching the caller, rather than the rule being unsaved",
+        "Named addressPatterns being narrower than intended as the most likely cause, and noted matching is against the caller's lowercase 0x address",
+        "Prescribed verifying from the outside as a caller (a raw 402 curl, or the call-agent-a2a script) rather than trusting the operator view of the config",
+        "Distinguished this symptom from the other common one \u2014 a 402 that repeats after a correctly signed retry, which points at a proxy stripping payment headers",
+        "Did not suggest deleting and recreating the policy as a first remedy"
+      ]
+    }
+  ]
+}
