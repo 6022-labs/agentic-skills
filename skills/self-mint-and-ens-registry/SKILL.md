@@ -44,6 +44,7 @@ Ever.** Every exact value lives in bundled files and is exercised by one script:
 - Addresses → `references/deployments.json` (verified on-chain).
 - ABIs → `abis/*.abi.json`.
 - All chain interaction → `scripts/agentic_identity.py`.
+- The identity card (frame, carousel, mark, IPFS CIDs) → `scripts/agentic_image.py`.
 
 Your job is to gather a few inputs, run the subcommands **in order**, read the
 JSON each prints, and branch on the **exit code**. If you ever feel the urge to
@@ -68,7 +69,9 @@ Exit codes are the contract between you and the toolkit:
 
 ## What you need from the user/owner first
 
-Collect these into an `identity.json` (copy `references/identity.example.json`):
+Collect these into an `identity.json` (copy `references/identity.example.json`).
+Everything on the identity card (creator, wallets, ENS domain, chain, collection
+name) is **read from the chain by the toolkit** — you never compute or type it:
 
 | Field | Required | What it is |
 |-------|----------|------------|
@@ -77,7 +80,8 @@ Collect these into an `identity.json` (copy `references/identity.example.json`):
 | `name` | yes | the agent's name; auto-normalized to a valid ENS label |
 | `role` | yes | one of `clone`, `human`, `expert`, `facilitator` |
 | `url` | yes | the agent's public runtime URL (published as the mandatory ENS `url` record) |
-| `default_image` | yes | an `ipfs://CID` or URI; a `default` image is required |
+| `base_image` | yes (file, not a config field) | the raw picture of the agent (png/jpg/gif/webp). Step 2 frames it into the 6022 card and pins it; **never** put an http(s) URL in `default_image` |
+| `default_image` | filled by step 2 | the IPFS CID of the framed card — written by `agentic_image.py build`; do not type it |
 | `owner` | no | who *owns* the identity NFT; defaults to the agent's own wallet (self-sovereign). Set to a human address if a person should own it |
 | `clone_of`, `extra_wallets`, `extra_addresses`, `images`, `attributes`, `extra_records` | no | optional extras (`extra_addresses`: non-EVM entries as `{"type": ..., "value": ...}`) |
 
@@ -98,7 +102,8 @@ place the agent recovers its wallet from on every future boot.
 ## The flow — run these in order
 
 Each command takes `--config identity.json` (except `wallet`) and prints one JSON
-object. Read it; act on the exit code.
+object. Read it; act on the exit code. Two scripts: `agentic_identity.py`
+(wallet, chain, ENS) and `agentic_image.py` (the identity card).
 
 ### 1. Wallet — create or recover
 
@@ -109,7 +114,32 @@ Idempotent: makes a new wallet the first time, returns the same one forever
 after. Note the `address` — that's the agent's identity wallet and the address
 the owner will fund.
 
-### 2. Preflight — validate before spending anything
+### 2. Images — frame the picture and pin it to IPFS
+
+```bash
+python scripts/agentic_image.py build --rpc-url <rpc> --config identity.json --base-image ./me.png
+```
+Every 6022 identity carries the same card: gradient border, the agent's picture,
+name + ENS domain, role/created/creator badges, a scrolling wallet carousel and
+the 6022 mark (`default`, animated SVG) plus a static PNG (`icon`). The toolkit
+reads chain id, collection, creator, wallets, the ENS domain and the star rating
+(0–8 stars from the creator's on-chain `$6022` balance — `Token6022` in
+`deployments.json`) **from the RPC**, renders both, pins them to IPFS and writes
+the CIDs into `identity.json` (`default_image`, `images.icon`). You only supply
+the picture; there is no way to declare stars or a balance by hand.
+
+Pinning needs one env var: `PINATA_JWT` (Pinata API key) or `IPFS_API_URL` (a
+Kubo RPC, plus `IPFS_API_TOKEN` if it is bearer-protected). Without one it stops
+and says so — ask the owner for either. Prefer Pinata: content pinned only on
+your own Kubo node is reachable only while that node is up, and the 6022 pinning
+service re-pins new mints but not later image updates. **An
+http(s) URL is not an image**: the toolkit refuses it, the 6022 pinning service
+skips it, and the avatar never resolves. If the agent is already minted with a
+bad image, the same command (no `--config`, add `--apply`) rewrites the images
+on-chain via `addOrUpdateAgentImage`. If a run is interrupted, re-run with
+`--created-at <value from the previous output>` so the same CIDs are reused.
+
+### 3. Preflight — validate before spending anything
 
 ```bash
 python scripts/agentic_identity.py preflight --config identity.json
@@ -119,7 +149,7 @@ Read-only. Confirms the network is supported, the collection is part of 6022
 `can_self_mint` (open collection) vs. proposal path (moderated). Fix any `error`
 before continuing.
 
-### 3. Fund-check — gate on gas, request funds if short
+### 4. Fund-check — gate on gas, request funds if short
 
 ```bash
 python scripts/agentic_identity.py fund-check --config identity.json
@@ -135,7 +165,7 @@ python scripts/agentic_identity.py fund-check --config identity.json
   Then **poll** `fund-check` (every ~20–30s) until it exits 0. Never paste a
   private key anywhere; the owner only sends native gas to the printed address.
 
-### 4. Mint — claim the identity
+### 5. Mint — claim the identity
 
 ```bash
 python scripts/agentic_identity.py mint --config identity.json
@@ -146,7 +176,7 @@ moderator must approve it before the identity exists; re-run `mint`/`status`
 later to pick up the minted token. If already minted, it returns the existing
 identity.
 
-### 5. Register ENS — publish the public profile
+### 6. Register ENS — publish the public profile
 
 ```bash
 python scripts/agentic_identity.py register-ens --config identity.json
@@ -157,7 +187,7 @@ only push records whose on-chain value changed. On networks without a 6022 ENS
 registry it reports the step is unavailable rather than guessing — that's
 expected, not an error.
 
-### 6. Status — confirm
+### 7. Status — confirm
 
 ```bash
 python scripts/agentic_identity.py status --config identity.json
