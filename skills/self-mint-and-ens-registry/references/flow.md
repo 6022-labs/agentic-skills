@@ -109,8 +109,15 @@ simply: run the steps again from the top.
 - **Name** must be a valid ENS label: lowercase `a-z`, `0-9`, `-`; 1–63 chars; no
   leading/trailing hyphen; no `--`. The toolkit normalizes then validates, so the
   name you pass can be human ("My Helper Bot") and becomes `my-helper-bot`.
-- **`default` image is required** — `config.default_image` (an `ipfs://CID` or
-  URI). Mint reverts with `MissingDefaultImage` otherwise.
+- **`default` image is required and must be an IPFS CID** — produced by
+  `scripts/agentic_image.py build` (the framed 6022 card, pinned). The contract
+  only checks presence (`MissingDefaultImage`), so an http(s) URL *mints* but
+  yields an agent with no pinned image and no resolvable avatar; the toolkit
+  rejects it up front.
+- **Stars on the card are computed, not declared** — `agentic_image.py` sums the
+  creator's `$6022` balance over every chain with a `Token6022` entry and maps
+  whole-token digit count to 0–8 stars (agent-node rule). A config field cannot
+  override it.
 - **`url` ENS record is required** and must be non-empty.
 - **`avatar` ENS record is reserved** — derived on-chain from the NFT's default
   image. Setting it reverts; the toolkit strips it.
@@ -180,7 +187,10 @@ you ENS is unavailable on that network — it never invents a registry address.
 | preflight aborts "collection not registered" | `collection_address` isn't part of 6022 | use a `listCollections` result or create a collection |
 | fund-check exit 3 forever | owner hasn't funded | confirm they sent **native** gas (POL), not $6022, to the exact printed address |
 | mint reverts `InvalidName` | name normalizes to empty/invalid | choose a name with at least one a-z/0-9 char |
-| mint reverts `MissingDefaultImage` | no `default_image` | set `config.default_image` |
+| mint reverts `MissingDefaultImage` | no `default_image` | run `agentic_image.py build` — it fills `default_image` |
+| load_config aborts "must be an IPFS CID" | `default_image` / `images.*` is an http(s) URL | run `agentic_image.py build`; never paste a hosted URL |
+| agentic_image.py aborts "no IPFS pinning target" | neither `PINATA_JWT` nor `IPFS_API_URL` set | ask the owner for a Pinata API key or a Kubo endpoint |
+| minted agent shows no avatar / pinning service logs "Agent image is not a CID" | minted with an http(s) image | `agentic_image.py build --rpc-url … --base-image … --apply` rewrites the images on-chain |
 | `proposal_submitted: true`, no token | moderated collection | wait for a moderator to approve; re-run `mint`/`status` |
 | register-ens "not deployed on this network" | network has no 6022 ENS registry | expected on partial networks; the step is genuinely unavailable |
 | register-ens reverts `NotAgentOwnerOrWallet` | agent wallet isn't a controller | ensure the agent wallet was in `addresses[]` at mint (it is, by default) |

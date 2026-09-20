@@ -36,8 +36,10 @@ CONFIG
 import argparse
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 try:
@@ -70,8 +72,12 @@ def emit(obj, code=0):
     sys.exit(code)
 
 
+# Resume anchors (pinned CIDs, tx hashes, created_at) a command registers so no failure loses them.
+fail_context = {}
+
+
 def fail(message, **extra):
-    emit({"ok": False, "error": message, **extra}, code=1)
+    emit({**fail_context, **extra, "ok": False, "error": message}, code=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -94,18 +100,107 @@ def resolve_chain(chain_id):
     return chains[key]
 
 
-def load_config(path):
+def load_config(path, require_images=True):
     if not path or not Path(path).exists():
         fail(f"config file not found: {path}")
-    with open(path) as f:
-        cfg = json.load(f)
-    required = ["chain_id", "name", "role", "url", "default_image", "collection_address"]
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except json.JSONDecodeError as e:
+        fail(f"config is not valid JSON: {e}")
+    if not isinstance(cfg, dict):
+        fail("config must be a JSON object")
+    required = ["chain_id", "name", "role", "url", "collection_address"]
+    if require_images:
+        required.append("default_image")
     missing = [k for k in required if not cfg.get(k)]
     if missing:
         fail(f"config missing required fields: {missing}")
+    for key in ("name", "role", "url", "collection_address", "owner", "default_image"):
+        if cfg.get(key) is not None and not isinstance(cfg[key], str):
+            fail(f"{key} must be a string, got {cfg[key]!r}")
+    if not str(cfg["chain_id"]).isdigit():
+        fail(f"chain_id must be an integer, got {cfg['chain_id']!r}")
+    cfg["chain_id"] = int(cfg["chain_id"])
     if cfg["role"] not in VALID_ROLES:
         fail(f"role must be one of {sorted(VALID_ROLES)}, got {cfg['role']!r}")
+    for key in ("collection_address", "owner"):
+        if cfg.get(key) and not Web3.is_address(cfg[key]):
+            fail(f"{key} is not a valid EVM address: {cfg[key]!r}")
+    if not isinstance(cfg.get("extra_wallets", []), list) or any(
+        not Web3.is_address(w) for w in cfg.get("extra_wallets", [])
+    ):
+        fail("extra_wallets must be a list of EVM addresses")
+    if not isinstance(cfg.get("extra_addresses", []), list):
+        fail("extra_addresses must be a list")
+    for a in cfg.get("extra_addresses", []):
+        if not isinstance(a, dict) or not isinstance(a.get("type"), str) or not isinstance(a.get("value"), str) \
+                or not a["value"].strip():
+            fail(f'extra_addresses entries must be {{"type": "<a-z0-9>", "value": "<string>"}}, got {a!r}')
+        if not re.fullmatch(r"[a-z0-9]+", a["type"]):  # AgentAddressLib rule
+            fail(f"extra_addresses type {a['type']!r} must be lowercase a-z/0-9 (e.g. evm, btc, sol)")
+        if a["type"] == "evm" and (not Web3.is_address(a["value"]) or int(a["value"], 16) == 0):
+            fail(f"extra_addresses evm value {a['value']!r} is not a non-zero EVM address")
+    if cfg.get("owner") and int(cfg["owner"], 16) == 0:
+        fail("owner cannot be the zero address")
+    if cfg.get("attributes", {}).get("role") not in (None, cfg["role"]):
+        fail("attributes.role %r conflicts with role %r" % (cfg["attributes"]["role"], cfg["role"]))
+    if cfg.get("clone_of") is not None and not str(cfg["clone_of"]).isdigit():
+        fail(f"clone_of must be a token id (integer), got {cfg['clone_of']!r}")
+    for key in ("images", "attributes", "extra_records"):
+        if not isinstance(cfg.get(key, {}), dict):
+            fail(f"{key} must be a JSON object")
+        bad = {k: v for k, v in cfg.get(key, {}).items() if not isinstance(v, str)}
+        if bad:
+            fail(f"{key} values must be strings, got {bad!r}")
+    # Stored as bare CIDs like agent-node; accept ipfs:// and gateway forms.
+    for key, value in {"default_image": cfg.get("default_image"), **cfg.get("images", {})}.items():
+        if not value:
+            continue
+        cid = extract_cid(value)
+        if cid is None:
+            fail(f"image {key!r} must be an IPFS CID (bare, ipfs://, or /ipfs/ path), got {value!r}. "
+                 "Agent images are pinned to IPFS; http(s) URLs are rejected. "
+                 "Run scripts/agentic_image.py build to produce the framed images + CIDs.")
+        if key == "default_image":
+            cfg["default_image"] = cid
+        else:
+            cfg["images"][key] = cid
+    if cfg.get("images", {}).get("default") not in (None, cfg.get("default_image")):
+        fail("images.default %r conflicts with default_image %r" % (cfg["images"]["default"], cfg.get("default_image")))
     return cfg
+
+
+def resolve_label(cfg):
+    """The label the mint stores as the name."""
+    label = normalize_name(cfg["name"])
+    if not validate_name(label):
+        fail(f"name {cfg['name']!r} normalizes to {label!r} which is not a valid ENS label "
+             "(need 1-63 chars of a-z/0-9/hyphen, no leading/trailing/double hyphen)")
+    return label
+
+
+CID_V0 = "^Qm[1-9A-HJ-NP-Za-km-z]{44}$"
+CID_V1_BASE32 = "^[bB][a-zA-Z2-7]{50,}$"
+
+
+def extract_cid(value):
+    """Bare CID from any accepted form, or None (mirrors the bridge's ExtractCid)."""
+    v = value.strip()
+    if "/ipfs/" in v:
+        v = v.split("/ipfs/", 1)[1]
+    elif v.startswith("ipfs://"):
+        v = v[len("ipfs://"):]
+    elif "://" in v:
+        return None
+    v = re.split(r"[/?#]", v, 1)[0]
+    if re.match(CID_V0, v) or re.match(CID_V1_BASE32, v):
+        return v
+    return None
+
+
+def is_ipfs_image(value):
+    return extract_cid(value) is not None
 
 
 def load_abi(name):
@@ -120,7 +215,9 @@ def load_abi(name):
 # on InvalidName.
 # --------------------------------------------------------------------------- #
 def normalize_name(raw):
-    s = raw.strip().lower()
+    # Fold accents (Zoë -> zoe) before filtering.
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", raw) if not unicodedata.combining(ch))
+    s = s.strip().lower()
     out = []
     for ch in s:
         if ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch == "-":
@@ -161,13 +258,31 @@ def wallet_path():
     ).expanduser()
 
 
+def load_wallet():
+    """Existing wallet only; `wallet` is the one command that creates."""
+    if not wallet_path().exists():
+        fail("no agent wallet at %s; run `agentic_identity.py wallet` first (or fix AGENTIC_WALLET_PATH)"
+             % wallet_path())
+    return load_or_create_wallet()
+
+
 def load_or_create_wallet():
     path = wallet_path()
     password = os.environ.get("AGENTIC_WALLET_PASSWORD")
     created = False
 
+    try:
+        return _load_or_create_wallet(path, password)
+    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
+        fail("cannot load or create the wallet at %s: %s" % (path, e))
+
+
+def _load_or_create_wallet(path, password):
+    created = False
     if path.exists():
         data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("wallet file must be a JSON object")
         if data.get("encrypted"):
             if not password:
                 fail("wallet is an encrypted keystore but AGENTIC_WALLET_PASSWORD is not set")
@@ -184,13 +299,13 @@ def load_or_create_wallet():
             payload = {"address": acct.address, "encrypted": True, "keystore": keystore}
         else:
             payload = {"address": acct.address, "encrypted": False, "private_key": priv}
-        path.write_text(json.dumps(payload, indent=2))
-        os.chmod(path, 0o600)
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
+            f.write(json.dumps(payload, indent=2))
         created = True
 
-    if not priv.startswith("0x"):
-        priv = "0x" + priv
-    return acct, priv, path, created
+    if path.stat().st_mode & 0o077:
+        os.chmod(path, 0o600)
+    return acct, "0x" + acct.key.hex().removeprefix("0x"), path, created
 
 
 # --------------------------------------------------------------------------- #
@@ -198,9 +313,11 @@ def load_or_create_wallet():
 # --------------------------------------------------------------------------- #
 def connect(cfg, chain):
     rpc = cfg.get("rpc_url") or (chain.get("rpc_urls") or [None])[0]
-    if not rpc or "<" in rpc:
+    if not isinstance(rpc, str) or not rpc.strip() or "<" in rpc:
         fail("no usable rpc_url. Set cfg.rpc_url or fill a key into deployments rpc_urls.")
-    w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 30}))
+    provider = Web3.HTTPProvider(rpc.strip(), request_kwargs={"timeout": 30})
+    provider.cache_allowed_requests = True  # web3 v7 otherwise re-asks eth_chainId on every call
+    w3 = Web3(provider)
     # Polygon is PoA — inject the right middleware across web3 v6/v7.
     try:
         from web3.middleware import geth_poa_middleware as poa
@@ -213,6 +330,8 @@ def connect(cfg, chain):
             pass
     if not w3.is_connected():
         fail(f"cannot connect to RPC {rpc}")
+    if cfg.get("chain_id") is not None and w3.eth.chain_id != int(cfg["chain_id"]):
+        fail(f"RPC {rpc} serves chain {w3.eth.chain_id}, but config chain_id is {cfg['chain_id']}")
     return w3
 
 
@@ -242,10 +361,31 @@ def fee_fields(w3):
         try:
             prio = w3.eth.max_priority_fee
         except Exception:
-            prio = w3.to_wei(30, "gwei")
+            prio = 0
+        # Polygon rejects tips under ~25 gwei.
+        prio = max(prio, w3.to_wei(30, "gwei"))
         return {"maxFeePerGas": base * 2 + prio, "maxPriorityFeePerGas": prio}
     except Exception:
         return {"gasPrice": w3.eth.gas_price}
+
+
+def funding_payload(w3, chain, address, required, balance, **extra):
+    """Shared shape of every gas-sufficiency answer."""
+    shortfall = max(0, required - balance)
+    return {
+        "ok": True,
+        "funded": shortfall == 0,
+        "address": address,
+        "native_symbol": chain.get("native_symbol", "ETH"),
+        "balance_wei": balance,
+        "balance_eth": float(w3.from_wei(balance, "ether")),
+        "required_wei": required,
+        "required_eth": float(w3.from_wei(required, "ether")),
+        "shortfall_wei": shortfall,
+        "shortfall_eth": float(w3.from_wei(shortfall, "ether")),
+        "explorer": chain.get("explorer"),
+        **extra,
+    }
 
 
 def gas_price_estimate(w3, fees):
@@ -269,9 +409,42 @@ def estimate_gas(fn, sender):
     try:
         return int(fn.estimate_gas({"from": sender}) * 1.25), None, False
     except ContractLogicError as e:
-        return None, str(e), False
-    except Exception:
+        return None, decode_revert(e), False
+    except Exception as e:
+        if "revert" in str(e).lower():
+            return None, decode_revert(e), False
         return None, None, True
+
+
+def decode_revert(err):
+    """Custom-error selector -> Name(args) via the bundled ABIs."""
+    text = str(err)
+    data = getattr(err, "data", None)
+    if isinstance(data, dict):
+        data = data.get("data")
+    blob = data if isinstance(data, str) else text
+    m = re.search(r"0x[0-9a-fA-F]{8}", blob or "")
+    if not m:
+        return text
+    selector = m.group(0).lower()
+    for abi_name in ("AgentCollectionV1", "AgentEnsRegistry", "AgentCollectionsManager", "AgentCollectionCreatorV1"):
+        for entry in load_abi(abi_name):
+            if entry.get("type") != "error":
+                continue
+            sig = "%s(%s)" % (entry["name"], ",".join(i["type"] for i in entry["inputs"]))
+            if Web3.keccak(text=sig)[:4].hex().lower().removeprefix("0x") == selector.removeprefix("0x"):
+                return "%s(%s)" % (entry["name"], decode_revert_args(entry, blob, m.end()))
+    return text
+
+
+def decode_revert_args(entry, blob, start):
+    from eth_abi import decode as abi_decode
+    payload = re.match(r"[0-9a-fA-F]*", blob[start:]).group(0)
+    try:
+        values = abi_decode([i["type"] for i in entry["inputs"]], bytes.fromhex(payload))
+    except Exception:
+        return ""
+    return ", ".join("%s=%s" % (i["name"], v) for i, v in zip(entry["inputs"], values))
 
 
 def gas_for_broadcast(fn, sender, fallback, action):
@@ -283,25 +456,45 @@ def gas_for_broadcast(fn, sender, fallback, action):
     return gas if gas is not None else fallback
 
 
-def send_tx(w3, acct, priv, fn, gas_limit, extra=None):
-    fees = fee_fields(w3)
-    tx = fn.build_transaction(
-        {
-            "from": acct.address,
-            "nonce": w3.eth.get_transaction_count(acct.address),
-            "chainId": w3.eth.chain_id,
-            "gas": gas_limit,
-            **fees,
-            **(extra or {}),
-        }
-    )
+def event_arg(contract, event, receipt, arg, tx_hash):
+    """One argument of the event this receipt must contain; a lagging RPC read cannot fake it."""
+    logs = getattr(contract.events, event)().process_receipt(receipt)
+    if not logs:
+        fail(f"transaction {tx_hash} succeeded but emitted no {event} event", tx_hash=tx_hash)
+    return logs[0]["args"][arg]
+
+
+def send_tx(w3, acct, priv, fn, gas_limit, extra=None, extra_context=None):
+    """extra_context is merged into any failure payload (e.g. earlier tx hashes)."""
+    try:
+        tx = fn.build_transaction(
+            {
+                "from": acct.address,
+                "nonce": w3.eth.get_transaction_count(acct.address, "pending"),
+                "chainId": w3.eth.chain_id,
+                "gas": gas_limit,
+                **fee_fields(w3),
+                **(extra or {}),
+            }
+        )
+    except Exception as e:
+        fail(f"could not build the transaction (nothing broadcast): {e}", **(extra_context or {}))
     signed = w3.eth.account.sign_transaction(tx, priv)
     raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
-    h = w3.eth.send_raw_transaction(raw)
-    receipt = w3.eth.wait_for_transaction_receipt(h, timeout=300)
+    try:
+        h = w3.eth.send_raw_transaction(raw)
+    except Exception as e:
+        fail(f"broadcast rejected by the RPC: {e}", **(extra_context or {}))
+    tx_hash = Web3.to_hex(h)
+    try:
+        receipt = w3.eth.wait_for_transaction_receipt(h, timeout=300)
+    except Exception as e:
+        # Broadcast already happened; surface the hash.
+        fail(f"transaction {tx_hash} not confirmed within 300s: {e}", tx_hash=tx_hash, pending=True,
+             **(extra_context or {}))
     if receipt["status"] != 1:
-        fail(f"transaction reverted: {h.hex()}", tx_hash=h.hex())
-    return h.hex(), receipt
+        fail(f"transaction reverted: {tx_hash}", tx_hash=tx_hash, **(extra_context or {}))
+    return tx_hash, receipt
 
 
 # --------------------------------------------------------------------------- #
@@ -312,20 +505,26 @@ def send_tx(w3, acct, priv, fn, gas_limit, extra=None):
 # mandatory (the agent wallet, always first). The contract canonicalizes evm
 # values, any casing accepted. role is a MANDATORY attribute key, not an arg.
 # --------------------------------------------------------------------------- #
-def build_mint_args(cfg, agent_addr, name):
-    to = Web3.to_checksum_address(cfg.get("owner") or agent_addr)
+def build_mint_addresses(cfg, agent_addr):
+    """Typed addresses exactly as the mint stores them."""
     addresses = [("evm", Web3.to_checksum_address(agent_addr))]
     for w in cfg.get("extra_wallets", []):
         entry = ("evm", Web3.to_checksum_address(w))
         if entry not in addresses:
             addresses.append(entry)
-    for a in cfg.get("extra_addresses", []):  # non-evm: {"type": ..., "value": ...}
-        entry = (a["type"], a["value"])
+    for a in cfg.get("extra_addresses", []):  # evm entries canonicalized like extra_wallets
+        value = Web3.to_checksum_address(a["value"]) if a["type"] == "evm" else a["value"]
+        entry = (a["type"], value)
         if entry not in addresses:
             addresses.append(entry)
+    return addresses
 
-    images = {"default": cfg["default_image"]}
-    images.update(cfg.get("images", {}))
+
+def build_mint_args(cfg, agent_addr, name):
+    to = Web3.to_checksum_address(cfg.get("owner") or agent_addr)
+    addresses = build_mint_addresses(cfg, agent_addr)
+
+    images = {**cfg.get("images", {}), "default": cfg["default_image"]}
     images_tuples = [(k, v) for k, v in images.items()]
 
     attrs = {k: str(v) for k, v in cfg.get("attributes", {}).items()}
@@ -354,6 +553,54 @@ def agent_ens_node(w3, ens, col, agent_label):
     return node
 
 
+PROPOSAL_SCAN_CAP = 500
+
+
+def find_pending_proposal(w3, col, agent_addr, name, addresses=()):
+    """(ours: (id, name) or None, foreign: (id, creator, why) or None, truncated).
+
+    Ours = filed by this wallet. Foreign = another wallet's pending proposal that would make
+    ours revert at approval time (same name, or one of our addresses).
+    """
+    ours_keys = {(t, v.lower() if t == "evm" else v) for t, v in addresses}
+    total = col.functions.mintProposalsLength().call()
+    scanned = min(total, PROPOSAL_SCAN_CAP)
+    foreign = None
+    for start in range(0, scanned, 50):
+        idx = range(start, min(start + 50, scanned))
+        props = None
+        if hasattr(w3, "batch_requests"):
+            try:
+                with w3.batch_requests() as batch:
+                    for i in idx:
+                        batch.add(col.functions.mintProposal(i))
+                    props = batch.execute()
+            except Exception:
+                props = None  # public RPCs often refuse batches
+        if props is None:
+            props = [col.functions.mintProposal(i).call() for i in idx]
+        for prop in props:
+            if prop[3] == agent_addr:
+                return (prop[0], prop[1]), None, False
+            if foreign is None and prop[1] == name:
+                foreign = (prop[0], prop[3], "name %r" % name)
+            elif foreign is None and ours_keys & {(t, v) for t, v in prop[7]}:
+                foreign = (prop[0], prop[3], "one of our addresses")
+    return None, foreign, total > scanned
+
+
+def find_minted_anywhere(mgr, agent_addr):
+    """(collection, tokenId, name) for this wallet in any 6022 collection, or None."""
+    offset = 0
+    while True:
+        collection, token_id, name, nxt = mgr.functions.findAgentByAddress("evm", agent_addr, offset, 50).call()
+        if token_id != 0:
+            return collection, token_id, name
+        if nxt == 0:
+            return None
+        offset = nxt
+
+
 # --------------------------------------------------------------------------- #
 # Read-only on-chain state used by preflight / mint / ens / status.
 # --------------------------------------------------------------------------- #
@@ -362,13 +609,47 @@ def read_state(w3, cfg, chain, agent_addr, name):
     collection = Web3.to_checksum_address(cfg["collection_address"])
 
     known = mgr.functions.isKnownCollection(collection).call()
+    # An unknown collection may lack the typed-address ABI; say so instead of a raw revert.
+    if not known:
+        fail("collection %s is not registered with the 6022 AgentCollectionsManager on %s; "
+             "use a listCollections result or create one (see references/flow.md)" % (collection, chain["name"]),
+             collection=collection, collection_known=False)
     token_id = col.functions.addressToTokenId("evm", agent_addr).call()
     minted = token_id != 0
+    if not minted:
+        # One wallet, one identity (agent-node checks the manager too).
+        other = find_minted_anywhere(mgr, agent_addr)
+        if other is not None:
+            fail("wallet %s already holds identity token %d (%r) in collection %s; "
+                 "set collection_address to that collection instead of minting a second identity"
+                 % (agent_addr, other[1], other[2], other[0]), minted_elsewhere=True,
+                 collection=other[0], token_id=other[1])
     # Name must be unique within the collection — the contract reverts (UsedName)
     # otherwise. Read it up front so we fail clearly before spending any gas.
     name_taken_by = col.functions.nameToTokenId(name).call()
     name_available = name_taken_by == 0
     mod_count = col.functions.moderatorCount().call()
+
+    # createMintProposal does not check pending proposals; avoid filing a duplicate.
+    ours, foreign, proposal_scan_truncated = (
+        find_pending_proposal(w3, col, agent_addr, name, build_mint_addresses(cfg, agent_addr))
+        if not minted and mod_count > 0 else (None, None, False)
+    )
+    if foreign is not None:
+        fail("pending mint proposal %d from wallet %s already claims %s; ours would revert at approval"
+             % (foreign[0], foreign[1], foreign[2]), blocked_by_proposal=foreign[0])
+    pending_proposal_id, pending_proposal_name = ours if ours else (None, None)
+
+    # The contract reverts on a bound extra address or a missing clone_of.
+    used_addresses = {}
+    if not minted:
+        for addr_type, value in build_mint_addresses(cfg, agent_addr)[1:]:
+            holder = col.functions.addressToTokenId(addr_type, value).call()
+            if holder != 0:
+                used_addresses["%s:%s" % (addr_type, value)] = holder
+    clone_of = cfg.get("clone_of")
+    if clone_of is not None and not (0 < int(clone_of) < col.functions.nextTokenId().call()):
+        fail("clone_of %s is not an existing token in this collection" % clone_of)
     is_mod = col.functions.isModerator(agent_addr).call()
     can_self_mint = (mod_count == 0) or is_mod
 
@@ -389,6 +670,10 @@ def read_state(w3, cfg, chain, agent_addr, name):
         "moderator_count": mod_count,
         "is_moderator": is_mod,
         "can_self_mint": can_self_mint,
+        "pending_proposal_id": pending_proposal_id,
+        "pending_proposal_name": pending_proposal_name,
+        "proposal_scan_truncated": proposal_scan_truncated,
+        "used_addresses": used_addresses,
         "ens_supported_on_chain": ens_ready,
         "ens_provisioned": ens_provisioned,
         "balance_wei": w3.eth.get_balance(agent_addr),
@@ -401,18 +686,15 @@ def read_state(w3, cfg, chain, agent_addr, name):
 # --------------------------------------------------------------------------- #
 def cmd_wallet(args):
     acct, _, path, created = load_or_create_wallet()
-    emit({"ok": True, "address": acct.address, "path": str(path),
-          "created": created, "encrypted": bool(os.environ.get("AGENTIC_WALLET_PASSWORD"))})
+    emit({"ok": True, "address": acct.address, "path": str(path), "created": created,
+          "encrypted": bool(json.loads(path.read_text()).get("encrypted"))})
 
 
 def cmd_preflight(args):
     cfg = load_config(args.config)
     chain = resolve_chain(cfg["chain_id"])
-    acct, _, _, _ = load_or_create_wallet()
-    name = normalize_name(cfg["name"])
-    if not validate_name(name):
-        fail(f"name {cfg['name']!r} normalizes to {name!r} which is not a valid ENS label "
-             "(need 1-63 chars of a-z/0-9/hyphen, no leading/trailing/double hyphen)")
+    acct, _, _, _ = load_wallet()
+    name = resolve_label(cfg)
 
     # validate ENS records the caller intends to set
     records = dict(cfg.get("extra_records", {}))
@@ -433,6 +715,8 @@ def cmd_preflight(args):
              f"{state['name_taken_by_token']}). Choose a different name; mint would revert "
              "with UsedName.", **state)
 
+    if state["used_addresses"]:
+        fail("these extra addresses already belong to another identity: %s" % state["used_addresses"], **state)
     emit({"ok": True, "address": acct.address, "chain": chain["name"],
           "ens_records_to_set": records, **state})
 
@@ -440,8 +724,8 @@ def cmd_preflight(args):
 def cmd_fund_check(args):
     cfg = load_config(args.config)
     chain = resolve_chain(cfg["chain_id"])
-    acct, priv, _, _ = load_or_create_wallet()
-    name = normalize_name(cfg["name"])
+    acct, priv, _, _ = load_wallet()
+    name = resolve_label(cfg)
     w3 = connect(cfg, chain)
     col, mgr, ens = contracts(w3, cfg, chain)
     state = read_state(w3, cfg, chain, acct.address, name)
@@ -459,45 +743,40 @@ def cmd_fund_check(args):
     # fail, so we abort rather than report a funding number for an impossible tx.
     # A pure estimation failure (RPC quirk) falls back to a generous static limit.
     mint_gas = 0
-    if not state["minted"]:
+    mint_action = None
+    if state["used_addresses"]:
+        fail("these extra addresses already belong to another identity: %s" % state["used_addresses"], **state)
+    if not state["minted"] and state["proposal_scan_truncated"]:
+        fail("more than %d pending proposals; cannot rule out a duplicate — ask a moderator to clear the queue"
+             % PROPOSAL_SCAN_CAP, **state)
+    if not state["minted"] and state["pending_proposal_id"] is None:
         args_tuple = build_mint_args(cfg, acct.address, name)
         if state["can_self_mint"]:
-            fn, fb, label = col.functions.mint(*args_tuple), 1_500_000, "mint"
+            fn, fb, mint_action = col.functions.mint(*args_tuple), 1_500_000, "mint"
         else:
             # Moderated: the agent pays for the proposal tx now; the moderator
             # pays for the actual mint later.
-            fn, fb, label = col.functions.createMintProposal(*args_tuple), 1_200_000, "createMintProposal"
+            fn, fb, mint_action = col.functions.createMintProposal(*args_tuple), 1_200_000, "createMintProposal"
         gas, revert, failed = estimate_gas(fn, acct.address)
         if revert is not None:
-            fail(f"{label} would revert; not a funding problem: {revert}", revert=True, reason=revert)
-        mint_gas = (gas / 1.25) if gas is not None else fb  # un-pad; headroom re-applied below
+            fail(f"{mint_action} would revert; not a funding problem: {revert}", revert=True, reason=revert)
+        mint_gas = int(gas / 1.25) if gas is not None else fb  # un-pad; headroom re-applied below
     ens_gas = 0
     if state["ens_supported_on_chain"] and not state["ens_provisioned"]:
-        ens_gas = 400_000  # initAgentTexts; cannot estimate before mint exists
+        ens_gas = init_texts_gas(ens_records(cfg))  # cannot estimate before the mint exists
 
     total_gas = int((mint_gas + ens_gas) * 1.25)  # 25% headroom
     required = total_gas * price
-    balance = state["balance_wei"]
-    shortfall = max(0, required - balance)
-    funded = shortfall == 0
-
+    # required uses the 2*base+tip cap the node checks; what actually gets paid is base+tip.
+    prio = fees.get("maxPriorityFeePerGas", 0)
+    expected = total_gas * ((price - prio) // 2 + prio) if "maxFeePerGas" in fees else required
+    payload = funding_payload(w3, chain, acct.address, required, state["balance_wei"],
+                              expected_cost_eth=float(w3.from_wei(expected, "ether")),
+                              estimated_mint_gas=mint_gas, estimated_ens_gas=ens_gas, gas_price_wei=price,
+                              mint_action=mint_action, pending_proposal_id=state["pending_proposal_id"])
+    funded = payload["funded"]
     emit(
-        {
-            "ok": True,
-            "funded": funded,
-            "address": acct.address,
-            "native_symbol": chain.get("native_symbol", "ETH"),
-            "balance_wei": balance,
-            "balance_eth": float(w3.from_wei(balance, "ether")),
-            "required_wei": required,
-            "required_eth": float(w3.from_wei(required, "ether")),
-            "shortfall_wei": shortfall,
-            "shortfall_eth": float(w3.from_wei(shortfall, "ether")),
-            "estimated_mint_gas": mint_gas,
-            "estimated_ens_gas": ens_gas,
-            "gas_price_wei": price,
-            "explorer": chain.get("explorer"),
-        },
+        payload,
         code=0 if funded else 3,
     )
 
@@ -505,8 +784,8 @@ def cmd_fund_check(args):
 def cmd_mint(args):
     cfg = load_config(args.config)
     chain = resolve_chain(cfg["chain_id"])
-    acct, priv, _, _ = load_or_create_wallet()
-    name = normalize_name(cfg["name"])
+    acct, priv, _, _ = load_wallet()
+    name = resolve_label(cfg)
     w3 = connect(cfg, chain)
     col, mgr, ens = contracts(w3, cfg, chain)
     state = read_state(w3, cfg, chain, acct.address, name)
@@ -518,6 +797,21 @@ def cmd_mint(args):
 
     if not state["collection_known"]:
         fail("collection not part of 6022; aborting before revert", **state)
+    if state["proposal_scan_truncated"]:
+        fail("more than %d pending proposals; cannot rule out a duplicate — ask a moderator to clear the queue"
+             % PROPOSAL_SCAN_CAP, **state)
+    if state["pending_proposal_id"] is not None and state["pending_proposal_name"] != name:
+        emit({"ok": True, "minted": False, "proposal_submitted": True, "already": True,
+              "proposal_id": state["pending_proposal_id"], "address": acct.address,
+              "note": "pending proposal %d is for name %r, not %r; a moderator must refuse it before re-filing"
+                      % (state["pending_proposal_id"], state["pending_proposal_name"], name)}, code=3)
+    if state["pending_proposal_id"] is not None:
+        emit({"ok": True, "minted": False, "proposal_submitted": True, "already": True,
+              "proposal_id": state["pending_proposal_id"], "address": acct.address,
+              "note": "a mint proposal for this wallet/name is already waiting for a moderator; "
+                      "not filing another. Re-run 'status' later."})
+    if state["used_addresses"]:
+        fail("these extra addresses already belong to another identity: %s" % state["used_addresses"], **state)
     if not state["name_available"]:
         fail(f"name {name!r} is already taken (token {state['name_taken_by_token']}); "
              "aborting before revert (no gas spent). Choose a different name.", **state)
@@ -527,26 +821,48 @@ def cmd_mint(args):
     if state["can_self_mint"]:
         fn = col.functions.mint(*args_tuple)
         gas = gas_for_broadcast(fn, acct.address, 1_500_000, "mint")
-        tx_hash, _ = send_tx(w3, acct, priv, fn, gas)
-        token_id = col.functions.addressToTokenId("evm", acct.address).call()
+        tx_hash, receipt = send_tx(w3, acct, priv, fn, gas)
+        token_id = event_arg(col, "Minted", receipt, "tokenId", tx_hash)
         emit({"ok": True, "minted": True, "token_id": token_id,
               "tx_hash": tx_hash, "owner": args_tuple[0], "address": acct.address})
     else:
         # Moderated collection: open a proposal; a moderator must approve later.
         fn = col.functions.createMintProposal(*args_tuple)
         gas = gas_for_broadcast(fn, acct.address, 1_200_000, "createMintProposal")
-        tx_hash, _ = send_tx(w3, acct, priv, fn, gas)
+        tx_hash, receipt = send_tx(w3, acct, priv, fn, gas)
         emit({"ok": True, "minted": False, "proposal_submitted": True,
+              "proposal_id": event_arg(col, "MintProposalCreated", receipt, "proposalId", tx_hash),
               "tx_hash": tx_hash, "address": acct.address,
               "note": "Collection is moderated. A moderator must approve via mintFromProposal "
                       "before the token exists. Re-run 'mint' / 'status' later to detect it."})
 
 
+def ens_records(cfg):
+    records = dict(cfg.get("extra_records", {}))
+    records[REQUIRED_ENS_KEY] = cfg["url"]
+    records.pop(RESERVED_ENS_KEY, None)
+    return records
+
+
+def string_slots(value):
+    n = len(value.encode("utf-8"))
+    return 1 if n < 32 else 1 + (n + 31) // 32
+
+
+def init_texts_gas(records):
+    """initAgentTexts cost fitted on Amoy (+~7% margin): base + per-record (event + slots)."""
+    return 280_000 + sum(18_000 + 24_000 * string_slots(v) for v in records.values())
+
+
+def set_text_gas(value):
+    return 130_000 + 24_000 * string_slots(value)
+
+
 def cmd_register_ens(args):
     cfg = load_config(args.config)
     chain = resolve_chain(cfg["chain_id"])
-    acct, priv, _, _ = load_or_create_wallet()
-    name = normalize_name(cfg["name"])
+    acct, priv, _, _ = load_wallet()
+    name = resolve_label(cfg)
     w3 = connect(cfg, chain)
     col, mgr, ens = contracts(w3, cfg, chain)
 
@@ -563,15 +879,13 @@ def cmd_register_ens(args):
     label = col.functions.nameOf(token_id).call()
     node = agent_ens_node(w3, ens, col, label)
 
-    records = dict(cfg.get("extra_records", {}))
-    records[REQUIRED_ENS_KEY] = cfg["url"]
-    records.pop(RESERVED_ENS_KEY, None)
+    records = ens_records(cfg)
 
     if not ens.functions.provisioned(node).call():
         # First-time provisioning: set ALL records atomically with initAgentTexts.
         recs = [(k, v) for k, v in records.items()]
         fn = ens.functions.initAgentTexts(collection, token_id, recs)
-        gas = gas_for_broadcast(fn, acct.address, 500_000, "initAgentTexts")
+        gas = gas_for_broadcast(fn, acct.address, init_texts_gas(records), "initAgentTexts")
         tx_hash, _ = send_tx(w3, acct, priv, fn, gas)
         emit({"ok": True, "provisioned": True, "action": "init",
               "node": node.hex(), "records": records, "tx_hash": tx_hash})
@@ -582,8 +896,8 @@ def cmd_register_ens(args):
             current = ens.functions.text(node, k).call()
             if current != v:
                 fn = ens.functions.setAgentText(collection, token_id, k, v)
-                gas = gas_for_broadcast(fn, acct.address, 200_000, f"setAgentText({k})")
-                tx_hash, _ = send_tx(w3, acct, priv, fn, gas)
+                gas = gas_for_broadcast(fn, acct.address, set_text_gas(v), f"setAgentText({k})")
+                tx_hash, _ = send_tx(w3, acct, priv, fn, gas, extra_context={"updated": dict(changed)})
                 changed[k] = tx_hash
         emit({"ok": True, "provisioned": True, "action": "refresh",
               "node": node.hex(), "updated": changed})
@@ -592,30 +906,45 @@ def cmd_register_ens(args):
 def cmd_status(args):
     cfg = load_config(args.config)
     chain = resolve_chain(cfg["chain_id"])
-    acct, _, path, _ = load_or_create_wallet()
-    name = normalize_name(cfg["name"])
+    acct, _, path, _ = load_wallet()
+    name = resolve_label(cfg)
     w3 = connect(cfg, chain)
     state = read_state(w3, cfg, chain, acct.address, name)
     emit({"ok": True, "address": acct.address, "wallet_path": str(path),
           "chain": chain["name"], **state})
 
 
+class JsonArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        fail("bad arguments: %s" % message, usage=self.format_usage().strip())
+
+
 def main():
-    p = argparse.ArgumentParser(description="Deterministic agentic self-mint / self-ENS toolkit")
+    p = JsonArgumentParser(description="Deterministic agentic self-mint / self-ENS toolkit")
     sub = p.add_subparsers(dest="cmd", required=True)
     for cmd in ["wallet", "preflight", "fund-check", "mint", "register-ens", "status"]:
         sp = sub.add_parser(cmd)
         if cmd != "wallet":
             sp.add_argument("--config", required=True, help="path to identity.json")
     args = p.parse_args()
-    {
+    run_command({
         "wallet": cmd_wallet,
         "preflight": cmd_preflight,
         "fund-check": cmd_fund_check,
         "mint": cmd_mint,
         "register-ens": cmd_register_ens,
         "status": cmd_status,
-    }[args.cmd](args)
+    }[args.cmd], args)
+
+
+def run_command(command, args):
+    """Keep the one-JSON-object contract even for RPC/transport errors."""
+    try:
+        command(args)
+    except SystemExit:
+        raise
+    except Exception as e:
+        fail("unexpected %s: %s" % (type(e).__name__, e))
 
 
 if __name__ == "__main__":

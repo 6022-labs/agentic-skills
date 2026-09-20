@@ -3,9 +3,16 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "You're the open-claw agent. You don't have a wallet yet. Mint yourself an on-chain agent identity on Polygon Amoy in collection 0xF897D5b759d225CD0505F77F101B7693cF861858. Your name is 'Open Claw Scout', role expert, your runtime is at https://open-claw.example.com and your default image is ipfs://bafytestcid. Walk through the whole flow and tell me exactly what you'd do at each step, including what happens if the wallet has no gas.",
-      "expected_output": "Agent creates/locates a wallet via the toolkit, runs preflight, runs fund-check, and on exit 3 produces a clear funding request (address + shortfall + POL) and explains it will poll until funded, then mint, then register-ens. Uses bundled addresses/ABIs only; never invents an address or hand-writes a contract call.",
-      "files": []
+      "prompt": "You're the open-claw agent. You don't have a wallet yet. Mint yourself an on-chain agent identity on Polygon Amoy in collection 0x3F333496C10e924768EFF9D9Dd8ef7fcfd046069. Your name is 'Open Claw Scout', role expert, your runtime is at https://open-claw.example.com and your picture is ./scout.png. Walk through the whole flow and tell me exactly what you'd do at each step, including what happens if the wallet has no gas.",
+      "expected_output": "Agent creates/locates a wallet via the toolkit, runs agentic_image.py build (frames scout.png into the 6022 card, pins it, fills default_image with a CID — asks the owner for PINATA_JWT or IPFS_API_URL if missing), runs preflight, runs fund-check, and on exit 3 produces a clear funding request (address + shortfall + POL) and explains it will poll until funded, then mint, then register-ens. Uses bundled addresses/ABIs only; never invents an address or hand-writes a contract call.",
+      "files": [],
+      "assertions": [
+        "Runs agentic_image.py build (image step) before preflight/mint so default_image is a toolkit-produced IPFS CID",
+        "Never proposes an http(s) URL or hand-typed default_image",
+        "Explains PINATA_JWT / IPFS_API_URL prerequisite and asks the owner if missing",
+        "Only toolkit commands + bundled addresses/ABIs; no hand-written contract calls",
+        "fund-check exit 3 -> funding request (address + shortfall POL) then polling"
+      ]
     },
     {
       "id": 2,
@@ -16,7 +23,7 @@
     {
       "id": 3,
       "prompt": "Can the agent mint itself on Polygon mainnet and also set up its ENS records there? Chain 137. If not, what works and what doesn't?",
-      "expected_output": "Correctly identifies chain 137 as fully deployed (AgentCollectionsManager, AgentEnsRegistry, AgentCollectionCreatorV1) \u2014 both mint and self-ENS-registry work there, using only addresses read from deployments.json. Notes gas is real POL and recommends Polygon Amoy (80002) for testing. Does not invent or recall addresses from memory.",
+      "expected_output": "Correctly identifies chain 137 as fully deployed (AgentCollectionsManager, AgentEnsRegistry, AgentCollectionCreatorV1) — both mint and self-ENS-registry work there, using only addresses read from deployments.json. Notes gas is real POL and recommends Polygon Amoy (80002) for testing. Does not invent or recall addresses from memory.",
       "files": []
     },
     {
@@ -24,6 +31,32 @@
       "prompt": "The agent's name is 'My Cool Agent #1!!' and the collection it's minting into is moderated (has 1 moderator). What will actually happen when it tries to mint, and what name will it end up with on-chain?",
       "expected_output": "Explains the name normalizes to a valid ENS label like 'my-cool-agent-1' (lowercase, hyphens, dropped specials, <=63 chars). Explains a moderated collection takes the createMintProposal path: proposal submitted now, token only exists after a moderator approves via mintFromProposal, and the agent should re-run mint/status later. Does not claim an immediate mint.",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "My agent's picture is hosted at https://cdn.example.com/bot.png. Can I just put that URL as default_image in identity.json and mint? It's faster.",
+      "expected_output": "Says no: default_image must be an IPFS CID of the framed 6022 card, never an http(s) URL — the toolkit rejects it, the 6022 pinning service skips non-CID images and the ENS avatar never resolves. Points to `scripts/agentic_image.py build --rpc-url ... --config identity.json --base-image bot.png` (download the picture first), which reads chain/collection/creator/wallets from the RPC, renders the card + icon, pins them (PINATA_JWT or IPFS_API_URL) and writes the CIDs into identity.json. Does not hand-compute any card field.",
+      "files": [],
+      "assertions": [
+        "Answers NO: default_image must be an IPFS CID",
+        "Explains consequence: pinning service skips non-CID, avatar never resolves",
+        "Points to agentic_image.py build --base-image",
+        "Says card fields are read from RPC by the toolkit, not typed",
+        "No workaround leaving an http(s) URL on-chain"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "My agent is already minted on Polygon mainnet but its image is a plain https URL and the avatar doesn't show. How do I fix it without re-minting?",
+      "expected_output": "Uses `scripts/agentic_image.py build --rpc-url <polygon rpc> --base-image <picture> --apply` with the agent's own wallet (well-known path): the toolkit finds the token via the collections manager, reads name/role/creator/wallets on-chain, renders + pins the card and icon, then calls addOrUpdateAgentImage (or a proposal on a moderated collection). Notes it costs gas and needs a pinning target env var. Does not suggest re-minting or editing the image URL by hand.",
+      "files": [],
+      "assertions": [
+        "Proposes agentic_image.py build --apply with the agent's own wallet (addOrUpdateAgentImage / proposal)",
+        "No re-mint, no hand-edit of the image value",
+        "Token located from wallet via collections manager; fields read on-chain",
+        "Mentions gas + pinning env var",
+        "No transaction broadcast in a dry run"
+      ]
     }
   ]
 }

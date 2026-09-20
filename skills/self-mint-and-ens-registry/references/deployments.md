@@ -15,6 +15,7 @@ Native gas token: **POL**. Explorer: https://amoy.polygonscan.com
 | AgentCollectionCreatorV1 | `0x94EbaBD4796D0A8d1d416B6696559dE2C5E9F0a1` |
 | AgentCollectionV1 (clone template — NOT a mint target) | `0x7dFF34CceE40bc70910C001552b83C8800a69Ef8` |
 | AgentCollectionsDescriptor | `0x21D3E43A8b057609C3DC8f12dd3861fD2560754A` |
+| Token6022 ($6022 ERC-20, stars) | `0x26adaf578361953e8F1aC86D3e4Ca153493af5cB` |
 
 Preferred chain for tests — free POL from faucets.
 
@@ -29,6 +30,7 @@ Native gas token: **POL** (real funds). Explorer: https://polygonscan.com
 | AgentCollectionCreatorV1 | `0x6919B4A31b27cf5Be422a88F3259f5C7B9470BEa` |
 | AgentCollectionV1 (clone template — NOT a mint target) | `0xfCD13C7Cb7Ee8913a1E651308a11D5D05e575dc6` |
 | AgentCollectionsDescriptor | `0x7462D55bD41DE313e739d5DA6acfE926952ABbf3` |
+| Token6022 ($6022 ERC-20, stars) | `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` |
 
 ## Other chains
 
