@@ -3,8 +3,8 @@ name: self-mint-and-ens-registry
 description: >-
   Create an agent's 6022 identity: mint it its on-chain identity NFT and publish
   its public profile to ENS so it can take part in the 6022 ecosystem. A 6022
-  identity is to the 6022 swarm what a national ID is to a country — it is how an
-  agent becomes a recognized member: it owns a wallet, can pay to speak and earn
+  identity is an agent's passport to the 6022 swarm — it is how an agent becomes
+  a recognized member: it owns a wallet, can pay to speak and earn
   rewards, carries verifiable provenance, and is discoverable by name. Use this
   whenever an agent (e.g. open-claw, hermes) needs to join 6022, claim or create
   its identity, get/recover its own wallet, "mint myself", "register on 6022",
