@@ -426,18 +426,21 @@ def store_cache(path, key, challenge):
 # the call
 # --------------------------------------------------------------------------
 
-def send_message(url, message, timeout, payment_header=None):
+def send_message(url, message, timeout, payment_header=None, context_id=None):
+    turn = {
+        "messageId": str(uuid.uuid4()),
+        "role": "user",
+        "parts": [{"text": message}],
+    }
+    # 6022 puts the thread pointer INSIDE the message object, not at params root;
+    # a caller that omits it gets a fresh thread on every turn.
+    if context_id:
+        turn["contextId"] = context_id
     body = {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
         "method": "SendMessage",
-        "params": {
-            "message": {
-                "messageId": str(uuid.uuid4()),
-                "role": "user",
-                "parts": [{"text": message}],
-            },
-        },
+        "params": {"message": turn},
     }
     headers = {"Content-Type": "application/json"}
     if payment_header:
@@ -446,6 +449,20 @@ def send_message(url, message, timeout, payment_header=None):
         return requests.post(url, json=body, headers=headers, timeout=timeout), None
     except requests.RequestException as exc:
         return None, f"request failed: {exc}"
+
+
+def reply_context_id(response):
+    """The thread id the peer assigned to this turn, or None.
+
+    Echo it on the next turn (`--context-id`) to continue the same conversation.
+    A peer that returns a new id every turn without honouring the one you sent
+    is not keeping a thread; report that instead of assuming memory exists.
+    """
+    try:
+        value = response.json()["result"]["message"]["contextId"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    return value if isinstance(value, str) else None
 
 
 def reply_text(response):
@@ -498,6 +515,8 @@ def main():
     parser = argparse.ArgumentParser(description="Call a 6022 agent over A2A, paying x402 as the caller.")
     parser.add_argument("--target", required=True, help="ENS domain or origin URL of the agent to call")
     parser.add_argument("--message", required=True, help="Text of the turn to send")
+    parser.add_argument("--context-id",
+                        help="Thread id returned by a previous turn's reply; pass it to continue that conversation"),
     parser.add_argument("--private-key-env", help="Env var holding the payer's private key")
     parser.add_argument("--wallet-file", help="Wallet JSON holding the payer's private key")
     parser.add_argument("--eth-rpc", default="https://ethereum-rpc.publicnode.com",
@@ -568,7 +587,8 @@ def main():
     if cached and account:
         presigned_header, _, sign_error = sign_challenge(account, cached)
         report["presigned"] = sign_error is None
-    response, error = send_message(a2a_url, args.message, args.timeout, presigned_header)
+    response, error = send_message(a2a_url, args.message, args.timeout, presigned_header,
+                                   context_id=args.context_id)
     if error:
         return fail("call", error, a2a_url=a2a_url)
 
@@ -618,7 +638,8 @@ def main():
             "payer": account.address,
         }
 
-        response, error = send_message(a2a_url, args.message, args.timeout, payment_header)
+        response, error = send_message(a2a_url, args.message, args.timeout, payment_header,
+                                       context_id=args.context_id)
         if error:
             return fail("retry", error, a2a_url=a2a_url)
 
@@ -639,6 +660,11 @@ def main():
 
     report["ok"] = True
     report["reply"] = text
+    returned_context = reply_context_id(response)
+    if returned_context:
+        report["contextId"] = returned_context
+        if args.context_id and returned_context != args.context_id:
+            report["contextId_not_honoured"] = True
     print(json.dumps(report, indent=2))
     return 0
 

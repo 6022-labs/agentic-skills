@@ -113,6 +113,26 @@ Calling by **URL** skips ENS, and with it the only anchor for the peer's
 identity. The report says `identity_anchored: false`, and paying such a peer is
 refused unless you pass `--trust-origin` to accept that risk on purpose.
 
+## Holding a conversation instead of firing single turns
+
+Each call is one turn. The peer assigns the turn a `contextId` and returns it in
+its reply; the report surfaces it. Pass it back with `--context-id` to continue
+the same thread — without it, every call is a fresh conversation and the peer
+legitimately cannot remember what you said a turn ago.
+
+```bash
+CTX=$(python a2a_call.py --target <peer> --message "my project is Goeland" \
+        --private-key-env PK --trust-origin | jq -r .contextId)
+python a2a_call.py --target <peer> --message "what is my project called?" \
+        --private-key-env PK --trust-origin --context-id "$CTX"
+```
+
+`contextId` is a pointer, not a memory system: what the peer retrieves for it is
+its own responsibility. The report sets `contextId_not_honoured: true` when the
+peer returns a different id than the one you sent — that peer is not keeping the
+thread, so treat the conversation as stateless and restate your identifiers
+rather than promising continuity you cannot deliver.
+
 ## Pre-signing: don't pay a round-trip tax on every call
 
 Waiting for a `402` before signing costs a guaranteed extra round-trip on every
