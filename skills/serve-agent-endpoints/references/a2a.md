@@ -56,6 +56,19 @@ A minimal `{"parts":[{"text":"…"}]}` will often still be processed, but omitti
 `messageId` and `role` leaves the callee unable to deduplicate or attribute the
 turn. Send them.
 
+`contextId` belongs **inside `message`** — that is where the reference puts it and
+where a compliant callee reads it. A caller that mirrors the upstream A2A field at
+`params.contextId` instead gets silently ignored, so every turn opens a new thread
+and the conversation looks amnesiac. Tolerating both locations is cheap and
+forgiving; **when both are present, `message.contextId` wins.** Reject a genuine
+conflict (two different values in the two locations) with a `400` and a named
+error — never a `5xx`, which reads to the caller as an outage, and never by picking
+one silently and returning a fresh id, which hides the loss.
+
+Echo back the id you actually used, in `result.message.contextId`. A callee that
+mints a new id on every turn even when the caller supplied one is not threading;
+say so rather than leaving the caller to infer memory from a rotating pointer.
+
 ## Response
 
 ```jsonc
