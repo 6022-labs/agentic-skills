@@ -46,7 +46,7 @@ Public proxy only — `railway.internal` unreachable from your machine. Postgres
 |---|---|
 | `TELEMETRY__NODE_ID` | `${{RAILWAY_SERVICE_ID}}` |
 | `AGENT_IDENTITY__RUNTIME_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` |
-| `SIWE__URI` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` |
+| `CONSOLE__URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` |
 | `VAULT__ADDRESS` | `http://${{Vault.RAILWAY_PRIVATE_DOMAIN}}:${{Vault.PORT}}` |
 | `IPFS__NODE_HTTP_URL` | Kubo service in env → `http://${{Kubo.RAILWAY_PRIVATE_DOMAIN}}:5001`. None → IPFS is external: copy `IPFS__NODE_HTTP_URL` + `IPFS__BEARER_TOKEN` from template (no template → ask, sibling default) |
 | `TELEMETRY__ENDPOINT` | `${{"Grafana Alloy".RAILWAY_PRIVATE_DOMAIN}}:4317` (quotes required — service name has a space) |
