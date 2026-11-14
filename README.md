@@ -60,6 +60,11 @@ Add a directory under `skills/` named for the **action it performs**
 
 Then add it to the table above and open a PR.
 
+## Git hooks
+
+Install [lefthook](https://github.com/evilmartians/lefthook) and [gitleaks](https://github.com/gitleaks/gitleaks)
+(`brew install lefthook gitleaks`), then run `lefthook install`: commits are scanned for secrets.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
