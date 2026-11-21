@@ -7,7 +7,7 @@ argument-hint: "[service-name] [project] [environment] — all optional, asked t
 
 # Mount a new agent-node
 
-Agent-node = one instance of `6022-labs/agentic-agent-node`, mounted beside **already-existing** shared infra (DB server: Postgres/MySQL/MariaDB, Vault, Kubo, Grafana stack). Never create or modify shared services — this skill adds one node only.
+Agent-node = one instance of the `ghcr.io/6022-labs/agentic-agent-node` image (built from `6022-labs/agentic-agent-node`), mounted beside **already-existing** shared infra (DB server: Postgres/MySQL/MariaDB, Vault, Kubo, Grafana stack). Never create or modify shared services — this skill adds one node only.
 
 ## Host strategy
 
@@ -22,6 +22,8 @@ Railway = only host today, use without asking. New host = new file; contracts be
 ## Host-independent contracts
 
 **Per-agent DB** on the shared server: db name = fresh lowercase GUID; user = GUID minus dashes (32 chars — fits MySQL user limit); password = random secret you generate.
+
+**Source = published image `ghcr.io/6022-labs/agentic-agent-node:main`, never the repo.** `main` tag = latest build of the repo's `main` (CI publishes on every merge), so the node runs the same code a repo link would — without the side effects: a repo-linked service makes the host write deployments (named after the project/environment, often a client) onto the public GitHub repo, and auto-ships every merge into every environment. Image source = no GitHub writes, updates are an explicit redeploy.
 
 **Per-node secrets.** `JWT__SIGNING_KEY` fresh per node (`openssl rand -hex 32`), never copied — shared key ⇒ one node can forge another's sessions.
 
@@ -60,8 +62,8 @@ Failure → replace ✅ with the failure + one next action. No recap of steps.
    ```
    Creates db + user + grants, prints `DB_NAME`/`DB_USER`/`DB_PASSWORD`. No hand-rolled SQL — script encodes the sharp edges (postgres `CREATE DATABASE` refuses transactions; grants run connected to the new db). Server unreachable → report URL, stop — no proxies, tunnels, `railway run`/SSH, docker, or manual SQL.
 4. **Variables** — full set per host file: reference templates + template-node copies + fresh `JWT__SIGNING_KEY` + DB URL. No template node → question policy.
-5. **Create & deploy** — service from repo `6022-labs/agentic-agent-node`, **all variables at creation** (unconfigured boot = crash-loop), attach public domain, enable host sleep/serverless mode (idle node stops billing).
-6. **Verify** — poll deploy → SUCCESS (build takes minutes), then `curl -s https://<domain>/` expect 200 (web console; `/.well-known/6022` 404s `draft_not_found` by design until an agent registers). Failure → service logs; usual culprits: missing variable, bad DB URL (test via the server's public proxy).
+5. **Create & deploy** — service from image `ghcr.io/6022-labs/agentic-agent-node:main` (no repo, no branch), **all variables at creation** (unconfigured boot = crash-loop), attach public domain, enable host sleep/serverless mode (idle node stops billing).
+6. **Verify** — poll deploy → SUCCESS (image pull + boot, no build; deployment must show the image, not a commit), then `curl -s https://<domain>/` expect 200 (web console; `/.well-known/6022` 404s `draft_not_found` by design until an agent registers). Failure → service logs; usual culprits: missing variable, bad DB URL (test via the server's public proxy).
 7. **Report** — the summary above.
 
 ## Cleanup on failure
