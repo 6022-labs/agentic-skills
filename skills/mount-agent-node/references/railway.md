@@ -22,7 +22,7 @@ railway environment list
 railway status --json
 ```
 
-- Agent-nodes: `latestDeployment.meta.repo == "6022-labs/agentic-agent-node"` **and** no `rootDirectory` (Grafana services build from the same repo under `/grafana/...` — shared, skip).
+- Agent-nodes: `source.image` (or `latestDeployment.meta.image`) is `ghcr.io/6022-labs/agentic-agent-node:<tag>` — exact image name: `agentic-agent-node-grafana`/`-alloy`/`-loki`/`-mimir`/`-tempo` are the shared Grafana stack, skip. Legacy repo-linked node (`latestDeployment.meta.repo == "6022-labs/agentic-agent-node"`, no `rootDirectory`) = still a valid config template; don't migrate it, not this skill's job.
 - DB servers: service named `Postgres` / `MySQL` / `MariaDB` (Railway templates).
 - Capture environment `id` + each `serviceId` (dashboard links).
 
@@ -117,21 +117,22 @@ Seal it: service → Variables → ⋯ → Seal (dashboard-only, permanent). Bet
 ## Create service + domain
 
 ```bash
-railway add --service "<SERVICE_NAME>" --repo 6022-labs/agentic-agent-node \
+railway add --service "<SERVICE_NAME>" --image ghcr.io/6022-labs/agentic-agent-node:main \
   --variables "KEY1=value1" --variables "KEY2=value2" ...
-railway service source connect --repo 6022-labs/agentic-agent-node --branch main --service "<SERVICE_NAME>"
 railway domain --service "<SERVICE_NAME>" --port 5000
 ```
 
-Repeat `--variables` per entry; single-quote values containing `${{...}}`. Repo builds from root Dockerfile — no build config. First build starts immediately ⇒ all variables at creation. Domain targets **port 5000** (the node's nginx listener).
+Repeat `--variables` per entry; single-quote values containing `${{...}}`. Public image — no registry credentials, no build config. First deploy starts immediately ⇒ all variables at creation. Domain targets **port 5000** (the node's nginx listener).
 
-**Branch pin — always `main`.** The connected branch is the autodeploy trigger: Railway auto-deploys every push to it by default. Pin it explicitly with the `source connect --branch main` line above (don't rely on the default-branch fallback). Autodeploy needs ≥1 project member's GitHub account with contributor access to the repo; if it ends up disabled, append one line to the summary: `⚠️ Autodeploy disabled — enable: service → Settings → GitHub trigger (check Railway GitHub App access).`
+**Image, never repo.** No `--repo`, no `railway service source connect`, no GitHub trigger — a repo source makes Railway write GitHub deployments named `<project> / <environment>` onto the public repo (SKILL.md source contract). If a repo ends up on the service anyway (template copy, CLI default), the deploy builds from the repo even with an image set: clear it with `serviceInstanceUpdate(serviceId, environmentId, input: { source: { image: "ghcr.io/6022-labs/agentic-agent-node:main", repo: null } })` — an env-config patch with `"repo": null` does not clear it.
 
-**Known CLI issue:** `railway add` can return "Unauthorized" despite a valid session (reads still work); re-login doesn't fix. Fallback: `railway api` `serviceCreate` mutation (variables in the input ⇒ first build fully configured), then the `source connect --branch main` command above (the `serviceConnect` mutation fails "ServiceInstance not found"; if `source connect` also fails, `serviceInstanceUpdate(serviceId, environmentId, input: { source: { repo } })` connects repo + default branch), then `railway domain`. Build auto-starts once the source lands.
+**Updates.** `:main` is republished on every merge to the repo's `main`, but Railway doesn't watch tags — a node stays on the image it pulled until redeployed: `railway redeploy --service "<SERVICE_NAME>" --from-source --yes`. Nothing to add to the summary.
+
+**Known CLI issue:** `railway add` can return "Unauthorized" despite a valid session (reads still work); re-login doesn't fix. Fallback: `railway api` `serviceCreate` mutation with `source: { image: "ghcr.io/6022-labs/agentic-agent-node:main" }` and the variables in the input (⇒ first deploy fully configured), then `railway domain`. Deploy auto-starts once the source lands.
 
 ## Serverless (app sleeping)
 
-Always enable — sleeps after 10 min without **outbound** packets, wakes on first request. Enable right after creation, during the first build (after a deploy needs a redeploy):
+Always enable — sleeps after 10 min without **outbound** packets, wakes on first request. Enable right after creation, during the first deploy (after it finishes needs a redeploy):
 
 - MCP: `update-service` with `sleepApplication: true`
 - CLI: `railway api` mutation `serviceInstanceUpdate(serviceId, environmentId, input: { sleepApplication: true })`
@@ -144,6 +145,8 @@ Node's own outbound (OTEL, DB) may keep it awake — enable anyway. First reques
 railway status --json                     # poll latestDeployment.status → SUCCESS
 railway logs --service "<SERVICE_NAME>"   # on failure / crash-loop
 ```
+
+`latestDeployment.meta.image` must be the GHCR image. A `commitHash`/`repo` there = the service still has a repo source → clear it (Image, never repo) and redeploy.
 
 Idle-node 502 = serverless cold boot — retry once before diagnosing.
 
