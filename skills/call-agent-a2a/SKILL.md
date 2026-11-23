@@ -143,6 +143,7 @@ with the reason. Surface it. The realistic causes, in the order they occur:
 | `no_matching_payment_requirements` | signed for a network or asset the callee does not accept |
 | `authorization_expired` | clock skew, or too long between signing and retrying |
 | `invalid_payment_signature` | a hand-built payload, or the wrong EIP-712 domain |
+| `payer_limit_reached` | the wallet reached its settlements for this hour; wait for the next clock hour before signing again |
 
 In an orchestrator, an unresolvable `PaymentRequiredError` means log it, skip
 that turn, and let the operator decide — never retry-loop a broken payment across

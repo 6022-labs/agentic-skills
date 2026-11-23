@@ -152,6 +152,8 @@ The callee re-issues a 402 whose `error` names the cause:
 | `no_matching_payment_requirements` | signed for a network/`payTo` the callee does not offer |
 | `invalid_payment_signature` | the digest did not recover to `from` — usually a wrong EIP-712 domain |
 | `authorization_expired` | `validBefore` has passed; clock skew or too slow a retry |
+| `self_payment` | from the facilitator: your wallet is also `payTo` |
+| `payer_limit_reached` | from the facilitator: your wallet reached its settlements for this clock hour on that chain; sign again in the next one |
 
 A second identical challenge after a correctly-signed retry is not a reason to
 try again — the inputs are unchanged, so the output will be too. Surface it.
